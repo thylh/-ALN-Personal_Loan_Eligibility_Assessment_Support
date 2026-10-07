@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   FileText, Search, Filter, Clock, CheckCircle2, 
   AlertTriangle, XCircle, ArrowUpRight, Download, 
-  UserCheck, Plus, RefreshCw, Eye, ChevronLeft, ChevronRight
+  UserCheck, Plus, RefreshCw, Eye, ChevronLeft, ChevronRight,
+  Radio, Sparkles
 } from 'lucide-react';
+import { useSocket } from '../../context/SocketContext';
+import { api } from '../../services/api';
 
 const INITIAL_LOS_APPLICATIONS = [
   {
@@ -106,11 +109,100 @@ const INITIAL_LOS_APPLICATIONS = [
 ];
 
 const LosList = () => {
+  const { socket, connected } = useSocket();
   const [applications, setApplications] = useState(INITIAL_LOS_APPLICATIONS);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [gradeFilter, setGradeFilter] = useState('ALL');
   const [officerFilter, setOfficerFilter] = useState('ALL'); // 'ALL' or 'MINE'
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Initial fetch from backend API
+  useEffect(() => {
+    api.getAdminApplications().then(res => {
+      if (res.success && res.data && res.data.length > 0) {
+        const backendApps = res.data.map(a => ({
+          id: a.applicationNo || a._id,
+          _id: a._id,
+          customerName: a.customerName,
+          phone: a.customerPhone || a.personalDetails?.phone || '',
+          idNumber: a.identityCard || '',
+          amount: a.requestedAmount,
+          termMonths: a.requestedTermMonths,
+          product: a.loanPurpose || 'Vay tiêu dùng',
+          riskGrade: a.scoringResult?.riskGrade || 'A',
+          score: a.scoringResult?.score || 750,
+          status: a.status,
+          version: a.version || 1,
+          statusLabel: a.status === 'APPROVED' ? 'Đã phê duyệt' : a.status === 'REJECTED' ? 'Từ chối' : a.status === 'ACTION_REQUIRED' ? 'Cần bổ sung' : 'Chờ duyệt',
+          officer: 'Trần Thị Bình',
+          createdAt: new Date(a.createdAt).toLocaleString('vi-VN'),
+          slaMinutesLeft: 15
+        }));
+
+        setApplications(backendApps);
+      }
+    }).catch(err => console.warn('Could not fetch LOS applications:', err));
+  }, []);
+
+  // CDC and Realtime Live Update
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleNewApp = ({ application }) => {
+      if (!application) return;
+      const formatted = {
+        id: application.applicationNo || application._id,
+        _id: application._id,
+        customerName: application.customerName,
+        phone: application.customerPhone || application.personalDetails?.phone || '',
+        idNumber: application.identityCard || '',
+        amount: application.requestedAmount,
+        termMonths: application.requestedTermMonths,
+        product: application.loanPurpose || 'Vay tiêu dùng',
+        riskGrade: application.scoringResult?.riskGrade || 'A',
+        score: application.scoringResult?.score || 750,
+        status: application.status,
+        version: application.version || 1,
+        statusLabel: 'Chờ duyệt',
+        officer: 'Chưa phân công',
+        createdAt: 'Vừa xong',
+        slaMinutesLeft: 30
+      };
+
+      setApplications(prev => [formatted, ...prev.filter(a => a.id !== formatted.id)]);
+    };
+
+    const handleTableRowUpdated = ({ loanId, application }) => {
+      if (!loanId && !application) return;
+      setApplications(prev => prev.map(a => {
+        if (a._id === loanId || a.id === loanId || a.id === application?.applicationNo) {
+          return {
+            ...a,
+            status: application.status,
+            version: application.version || (a.version + 1),
+            statusLabel: application.status === 'APPROVED' ? 'Đã phê duyệt' : application.status === 'REJECTED' ? 'Từ chối' : application.status === 'ACTION_REQUIRED' ? 'Cần bổ sung' : 'Chờ duyệt'
+          };
+        }
+        return a;
+      }));
+    };
+
+    const handleDocumentSync = (envelope) => {
+      if (envelope.payload) {
+        handleTableRowUpdated({ loanId: envelope.documentId, application: envelope.payload });
+      }
+    };
+
+    socket.on('loan:new_application', handleNewApp);
+    socket.on('loan:table_row_updated', handleTableRowUpdated);
+    socket.on('document:sync', handleDocumentSync);
+
+    return () => {
+      socket.off('loan:new_application', handleNewApp);
+      socket.off('loan:table_row_updated', handleTableRowUpdated);
+      socket.off('document:sync', handleDocumentSync);
+    };
+  }, [socket]);
 
   const formatCurrency = (val) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(val);
@@ -144,7 +236,17 @@ const LosList = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          {/* CDC Realtime Status */}
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold ${
+            connected 
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+              : 'bg-amber-50 text-amber-700 border-amber-200'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+            <span>{connected ? 'CDC Realtime Live' : 'Ngoại tuyến'}</span>
+          </div>
+
           <button
             type="button"
             onClick={() => window.print()}

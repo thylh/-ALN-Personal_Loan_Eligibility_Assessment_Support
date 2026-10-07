@@ -10,33 +10,14 @@ const INITIAL_DOCUMENTS = [
   {
     id: 'doc_cccd',
     category: 'cccd',
-    title: 'Căn cước công dân gắn chip (2 mặt)',
+    title: 'Căn cước công dân gắn chip (Đã xác thực eKYC)',
     required: true,
     status: 'completed',
-    fileName: 'CCCD_Gan_Chip_Verified_eKYC.pdf',
-    fileSize: '1.4 MB',
-    uploadedAt: 'Hôm nay, 10:15',
+    fileName: 'CCCD_Xac_Thuc_eKYC.png',
+    fileSize: '1.2 MB',
+    uploadedAt: 'Vừa hoàn tất',
     isEkycInherited: true,
-    fileUrl: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=600&q=80'
-  }
-];
-
-const PRESET_SAMPLE_FILES = [
-  {
-    category: 'income_statement',
-    title: 'Sao kê lương ngân hàng 3 tháng gần nhất',
-    required: true,
-    fileName: 'Sao_Ke_Tai_Khoan_Vietcombank_T1-T3.pdf',
-    fileSize: '3.2 MB',
-    fileUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80'
-  },
-  {
-    category: 'labor_contract',
-    title: 'Hợp đồng lao động chính thức',
-    required: true,
-    fileName: 'Hop_Dong_Lao_Dong_Vo_Thoi_Han_Ky_Ten.pdf',
-    fileSize: '2.1 MB',
-    fileUrl: 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&w=600&q=80'
+    fileUrl: null
   }
 ];
 
@@ -49,6 +30,31 @@ const DocumentUpload = () => {
   const [uploadProgress, setUploadProgress] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [selfCertified, setSelfCertified] = useState(false);
+
+  // Sync with real verified eKYC
+  useEffect(() => {
+    const saved = localStorage.getItem('verifiedEkyc');
+    if (saved) {
+      try {
+        const verified = JSON.parse(saved);
+        setDocuments([
+          {
+            id: 'doc_cccd',
+            category: 'cccd',
+            title: `Căn cước công dân gắn chip (${verified.fullName || 'Khách hàng'})`,
+            required: true,
+            status: 'completed',
+            fileName: `CCCD_${verified.idNumber || 'DinhDanh'}.png`,
+            fileSize: '1.2 MB',
+            uploadedAt: 'Đã xác thực eKYC',
+            isEkycInherited: true,
+            fileUrl: verified.frontImageUrl || null
+          }
+        ]);
+      } catch (e) {}
+    }
+  }, []);
 
   // Modal for preview
   const [previewDoc, setPreviewDoc] = useState(null);
@@ -57,7 +63,7 @@ const DocumentUpload = () => {
   // Check requirements
   const hasIncomeProof = documents.some(d => d.category === 'income_statement');
   const hasLaborContract = documents.some(d => d.category === 'labor_contract');
-  const isReadyToSubmit = hasIncomeProof && hasLaborContract;
+  const isReadyToSubmit = (hasIncomeProof && hasLaborContract) || selfCertified;
 
   // Handle file upload
   const processUploadedFile = (file) => {
@@ -125,32 +131,13 @@ const DocumentUpload = () => {
     }
   };
 
-  // 1-Click Fast Fill preset sample documents
-  const handleLoadSampleDocuments = () => {
-    setErrorMsg('');
-    const newItems = PRESET_SAMPLE_FILES.map((sample, idx) => ({
-      id: 'doc_sample_' + idx,
-      category: sample.category,
-      title: sample.title,
-      required: sample.required,
-      status: 'completed',
-      fileName: sample.fileName,
-      fileSize: sample.fileSize,
-      uploadedAt: 'Vừa tải lên',
-      isEkycInherited: false,
-      fileUrl: sample.fileUrl
-    }));
-
-    setDocuments([INITIAL_DOCUMENTS[0], ...newItems]);
-  };
-
   const handleRemoveDoc = (id) => {
     setDocuments(curr => curr.filter(d => d.id !== id));
   };
 
   const handleProceedToContract = () => {
     if (!isReadyToSubmit) {
-      setErrorMsg('Vui lòng tải lên đầy đủ Sao kê lương/Thu nhập và Hợp đồng lao động trước khi tiếp tục.');
+      setErrorMsg('Vui lòng tải lên chứng từ thu nhập hoặc tích chọn cam kết tự khai báo để tiếp tục.');
       return;
     }
     // Save document state
@@ -167,15 +154,8 @@ const DocumentUpload = () => {
           <div>
             <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">Bước 3 / 4</span>
             <h1 className="text-2xl font-black text-slate-900">Tải Lên Chứng Từ Thẩm Định (Document Upload)</h1>
+            <p className="text-xs text-slate-500 mt-1">Tải ảnh hoặc tệp PDF chứng từ thu nhập trực tiếp từ máy tính/điện thoại của bạn.</p>
           </div>
-          <button
-            type="button"
-            onClick={handleLoadSampleDocuments}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition shadow-sm"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-            Nạp mẫu tài liệu kiểm thử (1-Click)
-          </button>
         </div>
 
         {/* Global Progress Bar */}
@@ -409,6 +389,20 @@ const DocumentUpload = () => {
                   {hasLaborContract ? 'Đã tải lên' : 'Chưa có *'}
                 </span>
               </div>
+            </div>
+
+            {/* Self-declaration option for users with manual entered financial data */}
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-xs flex items-start gap-2.5">
+              <input 
+                type="checkbox" 
+                id="selfCert" 
+                checked={selfCertified} 
+                onChange={(e) => setSelfCertified(e.target.checked)} 
+                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer mt-0.5"
+              />
+              <label htmlFor="selfCert" className="text-amber-900 font-medium cursor-pointer text-[11px] leading-relaxed">
+                Tôi xác nhận thông tin nghề nghiệp và thu nhập tự nhập ở Bước 2 là chính xác. Cho phép tiếp tục chuyển sang bước Ký hợp đồng.
+              </label>
             </div>
 
             {/* Action buttons */}

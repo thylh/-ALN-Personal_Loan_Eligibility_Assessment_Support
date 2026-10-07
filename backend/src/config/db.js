@@ -12,6 +12,13 @@ const connectDB = async () => {
     });
     isConnected = true;
     console.log(`[Database] MongoDB connected successfully to ${mongoUri}`);
+    // Sync models and memory store
+    try {
+      const memoryStore = require('../store/memoryStore');
+      await memoryStore.initMongoSync();
+    } catch (syncErr) {
+      console.warn('[Database] Sync error:', syncErr.message);
+    }
   } catch (error) {
     console.warn(`[Database] MongoDB connection failed (${error.message}). Falling back to In-Memory Storage mode for seamless execution.`);
     isMockMode = true;

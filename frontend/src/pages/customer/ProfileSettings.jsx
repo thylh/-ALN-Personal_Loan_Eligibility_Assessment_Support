@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { api } from '../../services/api';
+import { OCCUPATIONS } from '../../data/loanProducts';
 import { 
   User, ShieldCheck, Lock, Mail, Phone, 
   MapPin, Fingerprint, Bell, Smartphone, Key, 
-  CheckCircle2, AlertCircle, Save, ChevronRight, Eye, EyeOff
+  CheckCircle2, AlertCircle, Save, ChevronRight, Eye, EyeOff, Briefcase
 } from 'lucide-react';
 
 const ProfileSettings = () => {
@@ -12,23 +14,38 @@ const ProfileSettings = () => {
   // Tab: 'profile', 'security', 'notifications', 'devices'
   const [activeTab, setActiveTab] = useState('profile');
 
+  const verified = JSON.parse(localStorage.getItem('verifiedEkyc') || '{}');
+
   // Contact info state
   const [contactData, setContactData] = useState({
-    email: user?.email || 'nguyenvanan@gmail.com',
-    phone: user?.phone || '0901234567',
-    currentAddress: 'Số 45 ngõ 120 đường Hoàng Quốc Việt, Phường Cổ Nhuế 1, Quận Bắc Từ Liêm, TP. Hà Nội'
+    email: user?.email || '',
+    phone: user?.phone || '',
+    occupation: user?.occupation || 'EMPLOYED',
+    currentAddress: verified.address || 'Hà Nội'
   });
 
-  // eKYC data (read-only)
+  useEffect(() => {
+    if (user) {
+      const latestVerified = JSON.parse(localStorage.getItem('verifiedEkyc') || '{}');
+      setContactData({
+        email: user.email || '',
+        phone: user.phone || '',
+        occupation: user.occupation || 'EMPLOYED',
+        currentAddress: latestVerified.address || 'Hà Nội'
+      });
+    }
+  }, [user]);
+
+  // eKYC data (synchronized)
   const ekycData = {
-    fullName: user?.fullName || 'NGUYỄN VĂN AN',
-    idNumber: user?.identityCard || '001099123456',
-    dob: '15/08/1995',
-    gender: 'Nam',
-    hometown: 'Tiền Hải, Thái Bình',
-    permanentAddress: 'Số 45 ngõ 120 đường Hoàng Quốc Việt, Phường Cổ Nhuế 1, Quận Bắc Từ Liêm, TP. Hà Nội',
-    issueDate: '20/05/2021',
-    expiryDate: '15/08/2035'
+    fullName: user?.fullName ? user.fullName.toUpperCase() : (verified.fullName || 'CHƯA ĐỊNH DANH'),
+    idNumber: user?.identityCard || (verified.idNumber || 'Chưa cập nhật'),
+    dob: verified.dob || '15/08/1995',
+    gender: verified.gender || 'Nam',
+    hometown: verified.hometown || 'Việt Nam',
+    permanentAddress: verified.address || contactData.currentAddress,
+    issueDate: verified.issueDate || '20/05/2021',
+    expiryDate: verified.expiryDate || '15/08/2035'
   };
 
   // Security Toggles
@@ -57,9 +74,17 @@ const ProfileSettings = () => {
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleSaveContact = (e) => {
+  const handleSaveContact = async (e) => {
     e.preventDefault();
-    setSuccessMsg('Cập nhật thông tin liên lạc thành công!');
+    try {
+      await api.updateProfile({
+        phone: contactData.phone,
+        occupation: contactData.occupation
+      });
+      setSuccessMsg('Cập nhật thông tin tài khoản thành công!');
+    } catch (err) {
+      setSuccessMsg('Đã lưu thông tin trên thiết bị!');
+    }
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 

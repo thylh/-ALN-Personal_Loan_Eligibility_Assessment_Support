@@ -4,8 +4,11 @@ import {
   User, Briefcase, Users, ChevronRight, Lock, 
   AlertTriangle, CheckCircle2, Building, DollarSign, 
   CreditCard, Save, ArrowLeft, ArrowRight, ShieldCheck, 
-  HelpCircle, Landmark
+  HelpCircle, Landmark, Wifi, Activity
 } from 'lucide-react';
+import { useSocket } from '../../context/SocketContext';
+import { useAuth } from '../../context/AuthContext';
+import { api } from '../../services/api';
 
 const VIETNAM_BANKS = [
   'Vietcombank (Ngân hàng Ngoại Thương)',
@@ -18,78 +21,177 @@ const VIETNAM_BANKS = [
   'VietinBank (Ngân hàng Công Thương)'
 ];
 
+const getOccupationTitle = (occupation) => {
+  switch (occupation) {
+    case 'STUDENT': return 'Sinh viên / Học sinh';
+    case 'EMPLOYED': return 'Nhân viên chính thức (Hưởng lương)';
+    case 'BUSINESS_OWNER': return 'Chủ hộ kinh doanh / Doanh nhân';
+    case 'FREELANCER': return 'Làm việc tự do (Freelancer)';
+    default: return 'Lao động tự do / Khác';
+  }
+};
+
 const LoanApplicationForm = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Active step in form: 'personal' -> 'employment' -> 'reference'
   const [activeTab, setActiveTab] = useState('personal');
 
-  // Prepopulated eKYC data from Step 3
+  // Prepopulated eKYC data synchronized from registration & step 1
   const [ekycData, setEkycData] = useState({
-    fullName: 'NGUYỄN VĂN AN',
-    idNumber: '001099123456',
-    dob: '15/08/1995',
+    fullName: user?.fullName ? user.fullName.toUpperCase() : '',
+    idNumber: user?.identityCard || '',
+    dob: '',
     gender: 'Nam',
-    address: 'Số 45 ngõ 120 đường Hoàng Quốc Việt, Phường Cổ Nhuế 1, Quận Bắc Từ Liêm, TP. Hà Nội'
+    address: ''
   });
 
-  // Selected Loan Proposal from Step 1 / Home
+  // Selected Loan Proposal from Step 1 / Home / Product Details
   const [loanProposal, setLoanProposal] = useState({
+    productId: 'prod-salary',
+    productName: 'Gói Vay Tín Chấp Người Đi Làm (Theo Lương)',
     amount: 50000000,
-    termMonths: 12
+    termMonths: 12,
+    interestRate: 0.85,
+    calcMethod: 'reducing'
   });
 
   // Form State
   const [formData, setFormData] = useState({
     // Step 1: Personal & Residence
-    phone: '0901234567',
-    email: 'nguyenvanan@gmail.com',
+    phone: user?.phone || '',
+    email: user?.email || '',
     maritalStatus: 'Độc thân',
     dependents: '0',
-    education: 'Đại học',
+    education: user?.occupation === 'STUDENT' ? 'Đại học (Đang theo học)' : 'Đại học',
     housingStatus: 'Nhà sở hữu riêng',
     rentExpense: '0',
-    currentAddress: 'Số 45 ngõ 120 đường Hoàng Quốc Việt, Phường Cổ Nhuế 1, Quận Bắc Từ Liêm, TP. Hà Nội',
-    livingYears: '3',
+    currentAddress: '',
+    livingYears: '1',
 
     // Step 2: Employment & Financial
-    employmentType: 'Nhân viên chính thức',
-    companyName: 'Công ty Cổ phần Công nghệ ABC Việt Nam',
-    companyTaxId: '0108991234',
-    jobTitle: 'Kỹ sư phần mềm / IT',
-    workTenureMonths: '28',
-    monthlyIncome: 22000000,
+    employmentType: getOccupationTitle(user?.occupation),
+    companyName: user?.occupation === 'STUDENT' ? 'Trường Đại học' : '',
+    companyTaxId: '',
+    jobTitle: user?.occupation === 'STUDENT' ? 'Sinh viên' : '',
+    workTenureMonths: '',
+    monthlyIncome: '',
     incomePaymentMethod: 'Chuyển khoản ngân hàng',
     otherIncome: 0,
-    monthlyExpenses: 8000000,
+    monthlyExpenses: '',
     existingDebtPayment: 0,
 
     // Step 3: Reference 1
-    ref1Name: 'Nguyễn Văn Bình',
+    ref1Name: '',
     ref1Relation: 'Bố/Mẹ',
-    ref1Phone: '0912345678',
-    ref1Job: 'Cán bộ hưu trí',
+    ref1Phone: '',
+    ref1Job: '',
 
     // Step 3: Reference 2
-    ref2Name: 'Trần Văn Cường',
-    ref2Relation: 'Đồng nghiệp',
-    ref2Phone: '0988776655',
+    ref2Name: '',
+    ref2Relation: 'Đồng nghiệp / Bạn bè',
+    ref2Phone: '',
 
     // Step 3: Bank Account for Disbursement
-    bankName: 'Vietcombank (Ngân hàng Ngoại Thương)',
-    accountNumber: '990123456789'
+    bankName: user?.bankName || 'Vietcombank (Ngân hàng Ngoại Thương)',
+    accountNumber: user?.accountNumber || ''
   });
 
+  const { connected, saveDraftRealtime, syncFormField, onlineActors } = useSocket();
   const [validationError, setValidationError] = useState('');
   const [draftSaved, setDraftSaved] = useState(false);
+  const [autoSyncing, setAutoSyncing] = useState(false);
 
-  // Load persisted eKYC and proposal on mount
+  // Load persisted eKYC and proposal on mount + fetch remote draft
   useEffect(() => {
+    // 1. Reset & Sync with current registered user profile
+    if (user) {
+      setFormData(prev => ({
+        ...prev,
+        phone: user.phone || '',
+        email: user.email || '',
+        bankName: user.bankName || 'Vietcombank (Ngân hàng Ngoại Thương)',
+        accountNumber: user.accountNumber || '',
+        employmentType: getOccupationTitle(user.occupation) || prev.employmentType,
+        companyName: user.occupation === 'STUDENT' ? 'Trường Đại học' : '',
+        jobTitle: user.occupation === 'STUDENT' ? 'Sinh viên' : '',
+        workTenureMonths: '',
+        monthlyIncome: '',
+        monthlyExpenses: '',
+        currentAddress: '',
+        ref1Name: '',
+        ref1Phone: '',
+        ref2Name: '',
+        ref2Phone: ''
+      }));
+      setEkycData({
+        fullName: user.fullName ? user.fullName.toUpperCase() : '',
+        idNumber: user.identityCard || '',
+        dob: '',
+        gender: 'Nam',
+        address: ''
+      });
+    } else {
+      setFormData({
+        phone: '',
+        email: '',
+        maritalStatus: 'Độc thân',
+        dependents: '0',
+        education: 'Đại học',
+        housingStatus: 'Nhà sở hữu riêng',
+        rentExpense: '0',
+        currentAddress: '',
+        livingYears: '1',
+        employmentType: '',
+        companyName: '',
+        companyTaxId: '',
+        jobTitle: '',
+        workTenureMonths: '',
+        monthlyIncome: '',
+        incomePaymentMethod: 'Chuyển khoản ngân hàng',
+        otherIncome: 0,
+        monthlyExpenses: '',
+        existingDebtPayment: 0,
+        ref1Name: '',
+        ref1Relation: 'Bố/Mẹ',
+        ref1Phone: '',
+        ref1Job: '',
+        ref2Name: '',
+        ref2Relation: 'Đồng nghiệp / Bạn bè',
+        ref2Phone: '',
+        bankName: 'Vietcombank (Ngân hàng Ngoại Thương)',
+        accountNumber: ''
+      });
+      setEkycData({
+        fullName: '',
+        idNumber: '',
+        dob: '',
+        gender: 'Nam',
+        address: ''
+      });
+    }
+
+    // 2. Prioritize verified eKYC ONLY IF it belongs to the active user
     const savedEkyc = localStorage.getItem('verifiedEkyc');
     if (savedEkyc) {
       try {
         const parsed = JSON.parse(savedEkyc);
-        setEkycData(parsed);
+        // Only accept if phone or identityCard matches current user
+        if (!user || !user.phone || parsed.phone === user.phone || parsed.idNumber === user.identityCard) {
+          setEkycData(prev => ({ ...prev, ...parsed }));
+          setFormData(prev => ({
+            ...prev,
+            phone: parsed.phone || (user ? user.phone : prev.phone),
+            email: parsed.email || (user ? user.email : prev.email),
+            bankName: parsed.bankName || (user ? user.bankName : prev.bankName),
+            accountNumber: parsed.accountNumber || (user ? user.accountNumber : prev.accountNumber),
+            currentAddress: parsed.address || prev.currentAddress,
+            employmentType: parsed.occupation ? getOccupationTitle(parsed.occupation) : (user ? getOccupationTitle(user.occupation) : prev.employmentType)
+          }));
+        } else {
+          localStorage.removeItem('verifiedEkyc');
+        }
       } catch (err) {
         console.error(err);
       }
@@ -104,7 +206,25 @@ const LoanApplicationForm = () => {
         console.error(err);
       }
     }
-  }, []);
+
+    // Attempt to load remote draft from backend server
+    const fetchRemoteDraft = async () => {
+      try {
+        const res = await api.getDraft();
+        if (res.success && res.data) {
+          if (res.data.form) setFormData(prev => ({ ...prev, ...res.data.form }));
+          if (res.data.loanProposal) setLoanProposal(res.data.loanProposal);
+          if (res.data.ekyc) setEkycData(prev => ({ ...prev, ...res.data.ekyc }));
+          if (res.data.activeTab) setActiveTab(res.data.activeTab);
+        }
+      } catch (err) {
+        console.warn('Could not load remote draft:', err.message);
+      }
+    };
+    if (user) {
+      fetchRemoteDraft();
+    }
+  }, [user]);
 
   const formatCurrency = (val) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(val);
@@ -181,15 +301,30 @@ const LoanApplicationForm = () => {
     }
   };
 
-  const handleSaveDraft = () => {
-    localStorage.setItem('loanApplicationDraft', JSON.stringify({
+  const handleSaveDraft = async () => {
+    setAutoSyncing(true);
+    const draftPayload = {
       ekyc: ekycData,
       loanProposal,
       form: formData,
+      activeTab,
+      dtiRatio,
       savedAt: new Date().toISOString()
-    }));
-    setDraftSaved(true);
-    setTimeout(() => setDraftSaved(false), 3000);
+    };
+
+    localStorage.setItem('loanApplicationDraft', JSON.stringify(draftPayload));
+
+    // Realtime Socket save and REST API fallback
+    try {
+      await saveDraftRealtime(draftPayload);
+      await api.saveDraft(draftPayload);
+      setDraftSaved(true);
+      setTimeout(() => setDraftSaved(false), 3000);
+    } catch (err) {
+      console.error('Draft save failed', err);
+    } finally {
+      setAutoSyncing(false);
+    }
   };
 
   return (
@@ -197,19 +332,32 @@ const LoanApplicationForm = () => {
       
       {/* Header & Steps */}
       <div className="mb-8">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
           <div>
             <span className="text-xs font-bold text-blue-600 uppercase tracking-widest">Bước 2 / 4</span>
             <h1 className="text-2xl font-black text-slate-900">Tạo Hồ Sơ Vay Vốn & Thu Thập Dữ Liệu Rủi Ro</h1>
           </div>
-          <button
-            type="button"
-            onClick={handleSaveDraft}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-sm transition"
-          >
-            <Save className="w-3.5 h-3.5 text-blue-600" />
-            {draftSaved ? 'Đã lưu nháp ✓' : 'Lưu hồ sơ nháp'}
-          </button>
+          <div className="flex items-center gap-2.5">
+            {/* Realtime Live Indicator */}
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold ${
+              connected 
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                : 'bg-amber-50 text-amber-700 border-amber-200'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+              <span>{connected ? 'Realtime Đồng Bộ' : 'Ngoại tuyến (Offline)'}</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSaveDraft}
+              disabled={autoSyncing}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-sm transition"
+            >
+              <Save className="w-3.5 h-3.5 text-blue-600" />
+              {autoSyncing ? 'Đang lưu máy chủ...' : draftSaved ? 'Đã lưu & đồng bộ ✓' : 'Lưu hồ sơ nháp'}
+            </button>
+          </div>
         </div>
 
         {/* Global Progress Bar */}
@@ -230,9 +378,21 @@ const LoanApplicationForm = () => {
       {/* Proposal Summary Badge */}
       <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 flex flex-wrap justify-between items-center gap-4">
         <div>
-          <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider block">Gói vay đang đăng ký:</span>
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">Gói vay đang đăng ký:</span>
+            {loanProposal.productName && (
+              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[11px] font-bold">
+                {loanProposal.productName}
+              </span>
+            )}
+          </div>
           <div className="text-base font-black text-slate-900">
             Số tiền: <span className="text-blue-600">{formatCurrency(loanProposal.amount)}</span> | Kỳ hạn: <span className="text-blue-600">{loanProposal.termMonths} tháng</span>
+            {loanProposal.interestRate && (
+              <span className="text-xs font-semibold text-emerald-600 ml-2">
+                (Lãi: {loanProposal.interestRate}%/tháng)
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3">

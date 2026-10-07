@@ -4,8 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import { 
   Phone, Lock, Mail, User, ShieldCheck, ArrowRight, 
   RotateCcw, Fingerprint, ScanFace, AlertTriangle, 
-  CheckCircle2, Sparkles, KeyRound, Eye, EyeOff
+  CheckCircle2, Sparkles, KeyRound, Eye, EyeOff, Briefcase
 } from 'lucide-react';
+import { OCCUPATIONS } from '../../data/loanProducts';
 
 const LoginRegister = () => {
   const navigate = useNavigate();
@@ -36,6 +37,7 @@ const LoginRegister = () => {
     phone: '',
     email: '',
     identityCard: '',
+    occupation: '',
     password: '',
     confirmPassword: ''
   });
@@ -154,7 +156,7 @@ const LoginRegister = () => {
         setLoading(false);
         // Login as customer
         await quickDemoLogin('customer');
-        navigate('/apply/ekyc');
+        navigate('/home');
       } else {
         const nextAttempts = wrongOtpAttempts + 1;
         setWrongOtpAttempts(nextAttempts);
@@ -191,7 +193,7 @@ const LoginRegister = () => {
       setLoading(false);
       if (res.success) {
         if (res.user.role === 'customer') {
-          navigate('/dashboard');
+          navigate('/home');
         } else {
           navigate('/admin');
         }
@@ -211,6 +213,10 @@ const LoginRegister = () => {
       setErrorMsg('Vui lòng điền đủ các trường bắt buộc.');
       return;
     }
+    if (!regData.occupation) {
+      setErrorMsg('Vui lòng chọn thông tin Nghề nghiệp của bạn để hệ thống đề xuất gói vay phù hợp.');
+      return;
+    }
     if (regData.password !== regData.confirmPassword) {
       setErrorMsg('Mật khẩu xác nhận không khớp.');
       return;
@@ -224,11 +230,19 @@ const LoginRegister = () => {
         email: regData.email,
         phone: regData.phone,
         identityCard: regData.identityCard,
+        occupation: regData.occupation,
         password: regData.password
       });
       setLoading(false);
       if (res.success) {
-        navigate('/apply/ekyc');
+        // Kiểm tra nếu trước đó đã chọn gói vay từ trang chi tiết
+        const savedProposal = localStorage.getItem('selectedLoanProposal');
+        if (savedProposal) {
+          navigate('/apply/ekyc');
+        } else {
+          // Điều hướng về Trang chủ để hiển thị các gói vay đề xuất theo nghề nghiệp vừa chọn
+          navigate('/home', { state: { justRegistered: true, occupation: regData.occupation } });
+        }
       } else {
         setErrorMsg(res.message || 'Đăng ký không thành công.');
       }
@@ -245,7 +259,7 @@ const LoginRegister = () => {
     setTimeout(async () => {
       setBiometricScanning(false);
       await quickDemoLogin('customer');
-      navigate('/dashboard');
+      navigate('/home');
     }, 1500);
   };
 
@@ -254,7 +268,7 @@ const LoginRegister = () => {
     setLoading(true);
     await quickDemoLogin(role);
     setLoading(false);
-    if (role === 'customer') navigate('/apply/ekyc');
+    if (role === 'customer') navigate('/home');
     else navigate('/admin');
   };
 
@@ -598,6 +612,32 @@ const LoginRegister = () => {
                   className="input-human w-full"
                   required
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5 flex items-center justify-between">
+                  <span>Nghề nghiệp <span className="text-red-500">*</span></span>
+                  <span className="text-[11px] text-blue-600 font-semibold lowercase">Đề xuất gói vay phù hợp</span>
+                </label>
+                <div className="relative">
+                  <Briefcase className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <select
+                    value={regData.occupation}
+                    onChange={(e) => setRegData({...regData, occupation: e.target.value})}
+                    className="input-human w-full pl-10 pr-8 bg-white font-medium text-slate-800"
+                    required
+                  >
+                    <option value="">-- Chọn nghề nghiệp của bạn --</option>
+                    {OCCUPATIONS.map((occ) => (
+                      <option key={occ.id} value={occ.id}>
+                        {occ.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  Thông tin phân loại người dùng (User Segmentation) để hệ thống tự động đề xuất gói vay tối ưu.
+                </span>
               </div>
 
               <div className="grid sm:grid-cols-2 gap-3">

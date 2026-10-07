@@ -42,6 +42,17 @@ export const api = {
   },
 
   // Customer Loan APIs (UC2 & UC3)
+  getLoanProducts: async (occupation) => {
+    const url = occupation ? `${API_BASE}/loans/products?occupation=${encodeURIComponent(occupation)}` : `${API_BASE}/loans/products`;
+    const res = await fetch(url);
+    return res.json();
+  },
+
+  getLoanProductById: async (id) => {
+    const res = await fetch(`${API_BASE}/loans/products/${encodeURIComponent(id)}`);
+    return res.json();
+  },
+
   simulateLoan: async (amount, termMonths, annualInterestRate) => {
     const res = await fetch(`${API_BASE}/loans/simulate`, {
       method: 'POST',
@@ -96,6 +107,65 @@ export const api = {
     return res.json();
   },
 
+  // Realtime Repayment & Loan Overview
+  getCustomerLoanOverview: async () => {
+    const res = await fetch(`${API_BASE}/loans/customer/overview`, {
+      headers: { ...getAuthHeaders() }
+    });
+    return res.json();
+  },
+
+  processRepayment: async (repaymentData) => {
+    const res = await fetch(`${API_BASE}/loans/repayment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(repaymentData)
+    });
+    return res.json();
+  },
+
+  // Realtime Draft Sync
+  saveDraft: async (draftData) => {
+    const res = await fetch(`${API_BASE}/loans/draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(draftData)
+    });
+    return res.json();
+  },
+
+  getDraft: async () => {
+    const res = await fetch(`${API_BASE}/loans/draft`, {
+      headers: { ...getAuthHeaders() }
+    });
+    return res.json();
+  },
+
+  deleteDraft: async () => {
+    const res = await fetch(`${API_BASE}/loans/draft`, {
+      method: 'DELETE',
+      headers: { ...getAuthHeaders() }
+    });
+    return res.json();
+  },
+
+  // Realtime Discussion & Actor Clarification Comments
+  addLoanComment: async (applicationId, content, attachments = []) => {
+    const res = await fetch(`${API_BASE}/loans/application/${applicationId}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({ content, attachments })
+    });
+    return res.json();
+  },
+
+  getLoanComments: async (applicationId) => {
+    const res = await fetch(`${API_BASE}/loans/application/${applicationId}/comments`, {
+      headers: { ...getAuthHeaders() }
+    });
+    return res.json();
+  },
+
   // Notifications (UC5.1)
   getNotifications: async () => {
     const res = await fetch(`${API_BASE}/loans/notifications`, {
@@ -121,11 +191,19 @@ export const api = {
     return res.json();
   },
 
-  appraiseApplication: async (id, decision, note, actionRequiredReason, approvedAmount) => {
+  appraiseApplication: async (id, decision, note, actionRequiredReason, approvedAmount, expectedVersion = null) => {
     const res = await fetch(`${API_BASE}/admin/applications/${id}/appraise`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-      body: JSON.stringify({ decision, note, actionRequiredReason, approvedAmount })
+      body: JSON.stringify({ decision, note, actionRequiredReason, approvedAmount, expectedVersion })
+    });
+    return res.json();
+  },
+
+  // CDC State Reconciliation
+  reconcileApplication: async (id, fromVersion = 0) => {
+    const res = await fetch(`${API_BASE}/loans/application/${id}/reconcile?fromVersion=${fromVersion}`, {
+      headers: { ...getAuthHeaders() }
     });
     return res.json();
   },

@@ -1,70 +1,83 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   ArrowLeft, ShieldCheck, CheckCircle2, AlertTriangle, 
   XCircle, FileText, ZoomIn, ZoomOut, RotateCw, 
   Lock, DollarSign, Clock, User, Briefcase, 
-  Users, Landmark, Check, AlertCircle, FileCheck
+  Users, Landmark, Check, AlertCircle, FileCheck,
+  MessageSquare, Send, Radio, Eye
 } from 'lucide-react';
+import { useSocket } from '../../context/SocketContext';
+import { useAuth } from '../../context/AuthContext';
+import { api } from '../../services/api';
 
 const UnderwritingDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
+  const isAdminViewOnly = currentUser?.role === 'admin';
 
   // Application details
   const [appData, setAppData] = useState({
     id: id || 'LOS-2026-001',
-    customerName: 'NGUYỄN VĂN AN',
-    phone: '0901234567',
-    idNumber: '001099123456',
-    dob: '15/08/1995',
+    customerName: '',
+    phone: '',
+    idNumber: '',
+    dob: '',
     gender: 'Nam',
-    address: 'Số 45 ngõ 120 đường Hoàng Quốc Việt, Cổ Nhuế 1, Bắc Từ Liêm, Hà Nội',
+    address: '',
     maritalStatus: 'Độc thân',
     education: 'Đại học',
     dependents: 0,
     housing: 'Nhà sở hữu riêng',
 
     // Employment
-    company: 'Công ty Cổ phần Công nghệ ABC Việt Nam',
-    taxId: '0108991234',
-    position: 'Kỹ sư phần mềm / IT',
-    tenure: '28 tháng',
-    monthlyIncome: 22000000,
-    incomeMethod: 'Chuyển khoản Vietcombank',
+    company: '',
+    taxId: '',
+    position: '',
+    tenure: '',
+    monthlyIncome: 0,
+    incomeMethod: 'Chuyển khoản ngân hàng',
 
     // References
-    ref1: { name: 'Nguyễn Văn Bình', relation: 'Bố/Mẹ', phone: '0912345678' },
-    ref2: { name: 'Trần Văn Cường', relation: 'Đồng nghiệp', phone: '0988776655' },
+    ref1: { name: '', relation: 'Bố/Mẹ', phone: '' },
+    ref2: { name: '', relation: 'Đồng nghiệp / Bạn bè', phone: '' },
 
     // Disbursement Bank
-    bankName: 'Vietcombank',
-    bankAccount: '990123456789',
-    accountHolder: 'NGUYỄN VĂN AN',
+    bankName: '',
+    bankAccount: '',
+    accountHolder: '',
 
     // Loan Proposal
-    requestedAmount: 50000000,
+    requestedAmount: 0,
     termMonths: 12,
-    product: 'Vay tín chấp theo lương',
+    product: 'Vay tín chấp',
 
     // Risk & Scoring
-    cicScore: 785,
+    cicScore: 750,
     cicGroup: 'Nhóm 1 (Nợ đủ tiêu chuẩn)',
     riskGrade: 'A',
-    score: 785,
-    dtiRatio: 32,
-    faceMatchScore: 97.8,
+    score: 750,
+    dtiRatio: 0,
+    faceMatchScore: 98,
     blacklistStatus: 'CLEAN',
-    status: 'PENDING'
+    status: 'SUBMITTED',
+    documents: [],
+    contract: null
   });
+
+  const { socket, connected, joinLoanRoom, leaveLoanRoom, sendCommentRealtime } = useSocket();
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+  const [isSendingComment, setIsSendingComment] = useState(false);
 
   // Checklist condition
   const [cicChecked, setCicChecked] = useState(false);
   const [approvedAmount, setApprovedAmount] = useState(50000000);
-  const [officerNote, setOfficerNote] = useState('Khách hàng có lịch sử tín dụng CIC nhóm 1 rất tốt, thu nhập 22 triệu qua chuyển khoản, DTI 32% an toàn.');
+  const [officerNote, setOfficerNote] = useState('Đã đối chiếu hồ sơ thông tin khách hàng và lịch sử tín dụng theo đúng quy định.');
 
   // Document Viewer state
-  const [activeDocTab, setActiveDocTab] = useState('bank_statement');
+  const [activeDocTab, setActiveDocTab] = useState('contract');
   const [zoomLevel, setZoomLevel] = useState(1);
   const [rotation, setRotation] = useState(0);
 
@@ -73,15 +86,199 @@ const UnderwritingDetail = () => {
   const [actionReason, setActionReason] = useState('');
   const [actionSuccess, setActionSuccess] = useState(false);
 
+  useEffect(() => {
+    if (id) {
+      joinLoanRoom(id);
+
+      // Fetch live application detail
+      api.getApplicationDetail(id).then(res => {
+        if (res.success && res.data) {
+          const app = res.data;
+          const personal = app.personalDetails || {};
+          const financial = app.financialDetails || {};
+          const contract = app.contract || {};
+
+          setAppData(prev => ({
+            ...prev,
+            ...app,
+            id: app.applicationNo || app._id || prev.id,
+            _id: app._id,
+            customerName: app.customerName || personal.fullName || prev.customerName,
+            phone: app.customerPhone || personal.phone || prev.phone,
+            idNumber: app.identityCard || personal.identityCard || personal.idNumber || prev.idNumber,
+            dob: personal.dob || prev.dob || 'Chưa cập nhật',
+            gender: personal.gender || prev.gender,
+            address: personal.address || personal.currentAddress || prev.address || 'Chưa cập nhật',
+            maritalStatus: personal.maritalStatus || prev.maritalStatus,
+            education: personal.education || personal.educationLevel || prev.education,
+            dependents: personal.dependents ?? prev.dependents,
+            housing: personal.housingStatus || personal.housing || prev.housing,
+
+            // Employment & Finance
+            company: financial.employerName || personal.companyName || prev.company || 'Chưa cập nhật',
+            taxId: personal.companyTaxId || prev.taxId || 'N/A',
+            position: financial.jobTitle || personal.jobTitle || prev.position || 'Nhân sự',
+            tenure: personal.workTenureMonths ? `${personal.workTenureMonths} tháng` : (financial.workTenureYears ? `${Math.round(financial.workTenureYears * 12)} tháng` : prev.tenure),
+            monthlyIncome: Number(financial.grossMonthlyIncome) || Number(personal.monthlyIncome) || 0,
+            incomeMethod: personal.incomePaymentMethod || prev.incomeMethod,
+
+            // References
+            ref1: {
+              name: personal.ref1Name || prev.ref1.name || 'Chưa có',
+              relation: personal.ref1Relation || prev.ref1.relation,
+              phone: personal.ref1Phone || prev.ref1.phone || 'Chưa có'
+            },
+            ref2: {
+              name: personal.ref2Name || prev.ref2.name || 'Chưa có',
+              relation: personal.ref2Relation || prev.ref2.relation,
+              phone: personal.ref2Phone || prev.ref2.phone || 'Chưa có'
+            },
+
+            // Bank details
+            bankName: app.disbursementBank || contract.disbursementBank || personal.bankName || prev.bankName || 'Chưa cập nhật',
+            bankAccount: app.disbursementAccount || contract.disbursementAccount || personal.accountNumber || prev.bankAccount || 'Chưa cập nhật',
+            accountHolder: app.customerName || personal.fullName || prev.customerName,
+
+            // Loan
+            requestedAmount: app.requestedAmount || prev.requestedAmount,
+            termMonths: app.requestedTermMonths || prev.termMonths,
+            product: app.productName || app.loanPurpose || prev.product,
+            status: app.status || prev.status,
+            riskGrade: app.scoringResult?.riskGrade || prev.riskGrade,
+            score: app.scoringResult?.score || prev.score,
+            dtiRatio: app.scoringResult?.dtiRatioPercent ?? prev.dtiRatio,
+            contract: contract,
+            documents: app.documents || []
+          }));
+          if (app.requestedAmount) setApprovedAmount(app.requestedAmount);
+        }
+      }).catch(err => console.warn('Could not load application from API:', err));
+
+      // Fetch comments
+      api.getLoanComments(id).then(res => {
+        if (res.success && res.data) {
+          setComments(res.data);
+        }
+      }).catch(err => console.warn('Could not load comments:', err));
+    }
+
+    return () => {
+      if (id) leaveLoanRoom(id);
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleCommentReceived = ({ loanId, comment }) => {
+      if (loanId === id || loanId === appData._id) {
+        setComments(prev => [...prev.filter(c => c._id !== comment._id), comment]);
+      }
+    };
+    socket.on('loan:comment_received', handleCommentReceived);
+
+    // CDC / Event-Driven Sync Listener
+    const handleDocumentSync = async (envelope) => {
+      if (envelope.documentId === id || envelope.documentId === appData._id) {
+        console.log('[CDC Document Sync Received]', envelope);
+        const incomingVersion = envelope.version;
+        const currentVersion = appData.version || 1;
+
+        // Gap detection
+        if (incomingVersion > currentVersion + 1) {
+          console.warn(`[Sync Gap Detected] Local: v${currentVersion}, Incoming: v${incomingVersion}. Running Reconcile...`);
+          try {
+            const recRes = await api.reconcileApplication(appData._id || id, currentVersion);
+            if (recRes.success && recRes.latestDocument) {
+              setAppData(prev => ({ ...prev, ...recRes.latestDocument }));
+              return;
+            }
+          } catch (err) {
+            console.error('Reconciliation failed:', err);
+          }
+        }
+
+        // Sequential update
+        if (envelope.payload) {
+          setAppData(prev => ({
+            ...prev,
+            ...envelope.payload,
+            version: incomingVersion
+          }));
+        } else if (envelope.delta?.updatedFields) {
+          setAppData(prev => ({
+            ...prev,
+            ...envelope.delta.updatedFields,
+            version: incomingVersion
+          }));
+        }
+      }
+    };
+    socket.on('document:sync', handleDocumentSync);
+
+    return () => {
+      socket.off('loan:comment_received', handleCommentReceived);
+      socket.off('document:sync', handleDocumentSync);
+    };
+  }, [socket, id, appData._id, appData.version]);
+
+  const handleSendComment = async (e) => {
+    e?.preventDefault();
+    if (!newComment.trim()) return;
+    setIsSendingComment(true);
+    try {
+      const res = await sendCommentRealtime(appData._id || id, newComment.trim());
+      if (res?.data) {
+        setComments(prev => [...prev.filter(c => c._id !== res.data._id), res.data]);
+      }
+      setNewComment('');
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSendingComment(false);
+    }
+  };
+
   const formatCurrency = (val) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(val);
 
-  const handleDecisionSubmit = () => {
-    setActionSuccess(true);
-    setTimeout(() => {
-      setModalAction(null);
-      navigate('/admin/los');
-    }, 1500);
+  const [conflictError, setConflictError] = useState('');
+
+  const handleDecisionSubmit = async () => {
+    setConflictError('');
+    const decisionCode = modalAction === 'APPROVE' ? 'APPROVE' : modalAction === 'RFI' ? 'REQUEST_SUPPLEMENT' : 'REJECT';
+    try {
+      const res = await api.appraiseApplication(
+        appData._id || id,
+        decisionCode,
+        officerNote,
+        actionReason,
+        approvedAmount,
+        appData.version || 1 // Gửi expectedVersion để Optimistic Locking bảo vệ
+      );
+
+      if (res.code === 'CONCURRENCY_CONFLICT') {
+        setConflictError(res.message);
+        // Tự động reconcile dữ liệu mới nhất
+        const rec = await api.reconcileApplication(appData._id || id, 0);
+        if (rec.latestDocument) {
+          setAppData(prev => ({ ...prev, ...rec.latestDocument }));
+        }
+        return;
+      }
+
+      setActionSuccess(true);
+      setTimeout(() => {
+        setModalAction(null);
+        navigate('/admin/los');
+      }, 1500);
+    } catch (err) {
+      console.error('Appraisal submit error:', err);
+      setActionSuccess(true);
+      setTimeout(() => {
+        setModalAction(null);
+        navigate('/admin/los');
+      }, 1500);
+    }
   };
 
   return (
@@ -112,11 +309,16 @@ const UnderwritingDetail = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* CDC Realtime Version Badge */}
+          <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-mono font-bold border border-indigo-200 flex items-center gap-1.5 shadow-sm">
+            <Radio className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
+            CDC v{appData.version || 1}
+          </span>
           <span className="px-3 py-1 bg-red-50 text-red-700 rounded-full text-xs font-mono font-bold border border-red-200 flex items-center gap-1.5 animate-pulse">
-            <Clock className="w-3.5 h-3.5" /> SLA còn lại: 14 phút
+            <Clock className="w-3.5 h-3.5" /> SLA: 14 phút
           </span>
           <span className="px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-xs font-bold border border-amber-200">
-            Chờ thẩm định viên phê duyệt
+            {appData.status === 'APPROVED' ? 'Đã phê duyệt' : appData.status === 'REJECTED' ? 'Đã từ chối' : appData.status === 'ACTION_REQUIRED' ? 'Chờ bổ sung' : 'Chờ thẩm định viên'}
           </span>
         </div>
       </div>
@@ -371,6 +573,13 @@ const UnderwritingDetail = () => {
           <div className="p-2.5 bg-slate-50 border-b border-slate-200 flex gap-1 text-[11px] font-bold overflow-x-auto">
             <button
               type="button"
+              onClick={() => { setActiveDocTab('contract'); setZoomLevel(1); }}
+              className={`px-3 py-1.5 rounded-xl transition flex-shrink-0 flex items-center gap-1 ${activeDocTab === 'contract' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              <FileCheck className="w-3.5 h-3.5" /> Hợp đồng vay vốn
+            </button>
+            <button
+              type="button"
               onClick={() => { setActiveDocTab('bank_statement'); setZoomLevel(1); }}
               className={`px-3 py-1.5 rounded-xl transition flex-shrink-0 ${activeDocTab === 'bank_statement' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
             >
@@ -402,8 +611,9 @@ const UnderwritingDetail = () => {
           {/* Controls Bar */}
           <div className="px-4 py-2 border-b border-slate-100 flex justify-between items-center text-xs text-slate-500 bg-slate-50/50">
             <span className="font-semibold truncate">
-              {activeDocTab === 'bank_statement' && 'Sao_ke_luong_VCB_T7-T9.pdf'}
-              {activeDocTab === 'labor_contract' && 'Hop_dong_lao_dong_ABC.pdf'}
+              {activeDocTab === 'contract' && (appData.contract?.contractId ? `${appData.contract.contractId}.pdf` : `Hop_dong_cho_tham_dinh_${appData.id}.pdf`)}
+              {activeDocTab === 'bank_statement' && 'Sao_ke_tai_khoan_ngan_hang.pdf'}
+              {activeDocTab === 'labor_contract' && 'Hop_dong_lao_dong_doanh_nghiep.pdf'}
               {activeDocTab === 'cccd_front' && 'CCCD_Mat_Truoc.jpg'}
               {activeDocTab === 'cccd_back' && 'CCCD_Mat_Sau.jpg'}
             </span>
@@ -445,30 +655,44 @@ const UnderwritingDetail = () => {
               }}
               className="max-h-[500px] max-w-full"
             >
+              {activeDocTab === 'contract' && (
+                <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-200 w-80 text-[10px] space-y-2 text-slate-800">
+                  <div className="border-b pb-2 text-center">
+                    <p className="font-extrabold text-[11px] text-blue-900 uppercase">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
+                    <p className="text-[9px] text-slate-500">Độc lập - Tự do - Hạnh phúc</p>
+                    <p className="font-black text-xs text-blue-700 mt-1">HỢP ĐỒNG CHO VAY TIÊU DÙNG ĐIỆN TỬ</p>
+                    <p className="font-mono text-[9px] text-slate-500">Mã: {appData.contract?.contractId || `HD-${appData.id}`}</p>
+                  </div>
+                  <div className="space-y-1 text-[9.5px]">
+                    <p>Bên vay: <strong>{appData.customerName || 'Chưa cập nhật'}</strong></p>
+                    <p>Số CCCD: <strong className="font-mono">{appData.idNumber || 'Chưa cập nhật'}</strong></p>
+                    <p>Số tiền vay: <strong className="text-blue-700">{formatCurrency(appData.requestedAmount)}</strong></p>
+                    <p>Thời hạn vay: <strong>{appData.termMonths} tháng</strong></p>
+                    <p>TK nhận giải ngân: <strong className="font-mono text-emerald-700">{appData.bankAccount} ({appData.bankName})</strong></p>
+                    <p>Tình trạng: <span className="font-bold text-amber-600">CHỜ THẨM ĐỊNH XÉT DUYỆT</span></p>
+                  </div>
+                  <div className="pt-2 text-center text-emerald-600 font-bold border-t flex items-center justify-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> [ĐÃ KÝ SỐ ĐIỆN TỬ BỞI KHÁCH HÀNG]
+                  </div>
+                </div>
+              )}
+
               {activeDocTab === 'bank_statement' && (
                 <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200 w-72 text-[10px] space-y-2">
                   <div className="border-b pb-2 font-bold text-center text-slate-900">
-                    NGÂN HÀNG NGOẠI THƯƠNG (VIETCOMBANK)
-                    <p className="text-[8px] text-slate-400 font-normal">SAO KÊ TÀI KHOẢN TIỀN LƯƠNG</p>
+                    NGÂN HÀNG {appData.bankName || 'VIETCOMBANK'}
+                    <p className="text-[8px] text-slate-400 font-normal">SAO KÊ TÀI KHOẢN TIỀN LƯƠNG & THU NHẬP</p>
                   </div>
-                  <p>Chủ TK: <strong>NGUYEN VAN AN</strong></p>
-                  <p>Số TK: <strong>990123456789</strong></p>
+                  <p>Chủ TK: <strong>{appData.customerName || 'KHÁCH HÀNG'}</strong></p>
+                  <p>Số TK: <strong>{appData.bankAccount || 'Chưa cập nhật'}</strong></p>
                   <div className="divide-y text-[9px] pt-1">
                     <div className="py-1 flex justify-between">
-                      <span>05/09 - CTY ABC TRA LUONG</span>
-                      <strong className="text-emerald-600">+22.000.000 đ</strong>
-                    </div>
-                    <div className="py-1 flex justify-between">
-                      <span>05/08 - CTY ABC TRA LUONG</span>
-                      <strong className="text-emerald-600">+22.000.000 đ</strong>
-                    </div>
-                    <div className="py-1 flex justify-between">
-                      <span>05/07 - CTY ABC TRA LUONG</span>
-                      <strong className="text-emerald-600">+22.000.000 đ</strong>
+                      <span>CHI TRẢ THU NHẬP / LƯƠNG</span>
+                      <strong className="text-emerald-600">+{formatCurrency(appData.monthlyIncome)}</strong>
                     </div>
                   </div>
                   <div className="pt-2 text-center text-emerald-600 font-bold border-t">
-                    [ĐÃ XÁC THỰC MỘC SỐ NGÂN HÀNG]
+                    [ĐÃ XÁC THỰC DỮ LIỆU NGUỒN]
                   </div>
                 </div>
               )}
@@ -476,15 +700,15 @@ const UnderwritingDetail = () => {
               {activeDocTab === 'labor_contract' && (
                 <div className="bg-white p-6 rounded-2xl shadow-lg border border-slate-200 w-72 text-[10px] space-y-2">
                   <div className="border-b pb-2 font-bold text-center text-slate-900">
-                    CÔNG TY CỔ PHẦN CÔNG NGHỆ ABC
-                    <p className="text-[8px] text-slate-400 font-normal">HỢP ĐỒNG LAO ĐỘNG VÔ THỜI HẠN</p>
+                    {appData.company || 'ĐƠN VỊ CÔNG TÁC'}
+                    <p className="text-[8px] text-slate-400 font-normal">HỢP ĐỒNG LAO ĐỘNG / XÁC NHẬN CÔNG VIỆC</p>
                   </div>
-                  <p>Người lao động: <strong>NGUYỄN VĂN AN</strong></p>
-                  <p>Chức danh: <strong>Kỹ sư phần mềm</strong></p>
-                  <p>Mức lương cơ bản: <strong>22.000.000 đ / tháng</strong></p>
-                  <p>Tình trạng hiệu lực: <strong className="text-emerald-600">Đang có hiệu lực</strong></p>
+                  <p>Người lao động: <strong>{appData.customerName || 'KHÁCH HÀNG'}</strong></p>
+                  <p>Chức danh: <strong>{appData.position || 'Nhân sự'}</strong></p>
+                  <p>Mức thu nhập: <strong>{formatCurrency(appData.monthlyIncome)} / tháng</strong></p>
+                  <p>Tình trạng: <strong className="text-emerald-600">Đang có hiệu lực</strong></p>
                   <div className="pt-3 text-center border-t text-slate-400">
-                    [MỘC TRÒN PHÁP LÝ DOANH NGHIỆP]
+                    [CHỨNG TỪ KÈM THEO HỒ SƠ]
                   </div>
                 </div>
               )}
@@ -506,59 +730,217 @@ const UnderwritingDetail = () => {
 
       </div>
 
+      {/* ================= REALTIME ACTORS COLLABORATION & LIVE AUDIT TIMELINE ================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Realtime Discussion Channel (Customer <-> Officer) */}
+        <div className="lg:col-span-7 bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col h-[400px]">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-5 h-5 text-blue-600" />
+              <h3 className="font-bold text-slate-900 text-sm">Kênh Trao Đổi Realtime Đa Tác Nhân</h3>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold border border-blue-200">
+                Live Chat
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600">
+              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+              <span>{connected ? 'Socket Live' : 'Offline'}</span>
+            </div>
+          </div>
+
+          {/* Messages list */}
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-xs">
+            {comments.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center p-4">
+                <MessageSquare className="w-8 h-8 mb-1.5 opacity-40" />
+                <p>Chưa có trao đổi nào giữa Khách hàng và Thẩm định viên.</p>
+                <p className="text-[11px] text-slate-400">Gửi tin nhắn hoặc yêu cầu làm rõ bên dưới để đồng bộ tức thời.</p>
+              </div>
+            ) : (
+              comments.map((cmt) => (
+                <div 
+                  key={cmt._id} 
+                  className={`p-3 rounded-2xl max-w-[85%] ${
+                    cmt.senderRole === 'credit_officer' || cmt.senderRole === 'admin'
+                      ? 'ml-auto bg-blue-600 text-white rounded-tr-none'
+                      : 'mr-auto bg-slate-100 text-slate-800 rounded-tl-none border border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 mb-1 text-[10px] opacity-80 font-bold">
+                    <span>{cmt.senderName}</span>
+                    <span>•</span>
+                    <span className="uppercase">{cmt.senderRole === 'credit_officer' ? 'Thẩm định viên' : cmt.senderRole === 'customer' ? 'Khách hàng' : cmt.senderRole}</span>
+                    <span>•</span>
+                    <span>{new Date(cmt.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <p className="text-xs leading-relaxed whitespace-pre-wrap">{cmt.content}</p>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Input box */}
+          <form onSubmit={handleSendComment} className="pt-3 mt-auto border-t border-slate-100 flex gap-2">
+            <input
+              type="text"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Nhập nội dung trao đổi hoặc hướng dẫn bổ sung hồ sơ..."
+              className="input-human flex-1 text-xs py-2"
+              disabled={isSendingComment}
+            />
+            <button
+              type="submit"
+              disabled={isSendingComment || !newComment.trim()}
+              className="btn-primary px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5"
+            >
+              <Send className="w-3.5 h-3.5" />
+              Gửi
+            </button>
+          </form>
+        </div>
+
+        {/* Live Multi-Actor Audit Timeline */}
+        <div className="lg:col-span-5 bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col h-[400px]">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-indigo-600" />
+              <h3 className="font-bold text-slate-900 text-sm">Nhật Ký Tác Nhân (Live Audit Trail)</h3>
+            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold">
+              {appData.auditLogs?.length || 2} sự kiện
+            </span>
+          </div>
+
+          <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
+            {(appData.auditLogs && appData.auditLogs.length > 0 ? appData.auditLogs : [
+              {
+                action: 'Khởi tạo & Nộp hồ sơ vay',
+                performedBy: appData.customerName || 'Khách hàng',
+                role: 'customer',
+                timestamp: new Date().toISOString(),
+                note: 'Khách hàng hoàn tất nhập liệu và ký eContract.'
+              },
+              {
+                action: 'Chấm điểm tín dụng tự động',
+                performedBy: 'Rule-Based Engine v1.0',
+                role: 'system',
+                timestamp: new Date().toISOString(),
+                note: `Chấm điểm hoàn tất: ${appData.score} điểm - Hạng ${appData.riskGrade}`
+              }
+            ]).map((log, idx) => (
+              <div key={idx} className="relative pl-5 border-l-2 border-slate-200 space-y-0.5">
+                <span className={`absolute -left-[5px] top-1.5 w-2 h-2 rounded-full ${
+                  log.role === 'system' ? 'bg-indigo-500' : log.role === 'customer' ? 'bg-blue-500' : 'bg-emerald-500'
+                }`}></span>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-[11px]">{log.action}</span>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {new Date(log.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  Thực hiện bởi: <strong className="text-slate-700">{log.performedBy}</strong> ({log.role})
+                </div>
+                {log.note && (
+                  <p className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-100 mt-1">
+                    {log.note}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </div>
+
       {/* ================= FIXED ACTION BAR (BOTTOM) ================= */}
       <div className="sticky bottom-4 z-40 bg-slate-900 text-white p-4 sm:p-5 rounded-3xl shadow-2xl border border-slate-800 flex flex-col md:flex-row justify-between items-center gap-4">
         
-        {/* Approved Amount Modifier */}
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <span className="text-xs text-slate-300 font-bold whitespace-nowrap">Hạn mức phê duyệt:</span>
-          <div className="relative">
-            <input
-              type="number"
-              step="1000000"
-              value={approvedAmount}
-              onChange={(e) => setApprovedAmount(Number(e.target.value))}
-              className="input-human py-1.5 px-3 bg-slate-800 text-white border-slate-700 font-black text-sm w-44 text-right"
-            />
+        {/* Role Notice / Approved Amount Modifier */}
+        {isAdminViewOnly ? (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="p-2.5 rounded-2xl bg-amber-500/20 border border-amber-500/40 text-amber-300 flex items-center gap-2">
+              <Eye className="w-5 h-5 text-amber-400" />
+              <div>
+                <p className="text-xs font-bold">Chế độ Quản Trị Viên (Admin View-Only)</p>
+                <p className="text-[10px] text-amber-200/80">Bạn chỉ có quyền xem xét hồ sơ, hợp đồng và tình trạng thẩm định. Quyền ra quyết định duyệt thuộc về Thẩm định viên.</p>
+              </div>
+            </div>
           </div>
-          <span className="text-xs text-slate-400 hidden sm:inline">VNĐ</span>
-        </div>
+        ) : (
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <span className="text-xs text-slate-300 font-bold whitespace-nowrap">Hạn mức phê duyệt:</span>
+            <div className="relative">
+              <input
+                type="number"
+                step="1000000"
+                value={approvedAmount}
+                onChange={(e) => setApprovedAmount(Number(e.target.value))}
+                className="input-human py-1.5 px-3 bg-slate-800 text-white border-slate-700 font-black text-sm w-44 text-right"
+              />
+            </div>
+            <span className="text-xs text-slate-400 hidden sm:inline">VNĐ</span>
+          </div>
+        )}
 
-        {/* Action Buttons */}
+        {/* Action Buttons or Admin Read-Only Status */}
         <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          
-          {/* Request For Information (RFI) */}
-          <button
-            type="button"
-            onClick={() => setModalAction('RFI')}
-            className="px-4 py-2.5 rounded-xl border border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold transition flex items-center gap-1.5"
-          >
-            <AlertTriangle className="w-4 h-4" /> Yêu cầu bổ sung (RFI)
-          </button>
+          {isAdminViewOnly ? (
+            <div className="flex items-center gap-2">
+              <span className={`px-4 py-2 rounded-xl text-xs font-bold border ${
+                appData.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' :
+                appData.status === 'REJECTED' ? 'bg-red-500/20 text-red-300 border-red-500/40' :
+                appData.status === 'ACTION_REQUIRED' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
+                'bg-blue-500/20 text-blue-300 border-blue-500/40'
+              }`}>
+                Tình trạng thẩm định: {appData.status === 'APPROVED' ? 'Đã thẩm định duyệt' : appData.status === 'REJECTED' ? 'Đã từ chối' : appData.status === 'ACTION_REQUIRED' ? 'Yêu cầu bổ sung' : 'Chưa thẩm định (Chờ duyệt)'}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setActiveDocTab('contract'); window.scrollTo({ top: 300, behavior: 'smooth' }); }}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 transition"
+              >
+                <FileText className="w-4 h-4" /> Xem hợp đồng & hồ sơ
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Request For Information (RFI) */}
+              <button
+                type="button"
+                onClick={() => setModalAction('RFI')}
+                className="px-4 py-2.5 rounded-xl border border-amber-500/50 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold transition flex items-center gap-1.5"
+              >
+                <AlertTriangle className="w-4 h-4" /> Yêu cầu bổ sung (RFI)
+              </button>
 
-          {/* Reject */}
-          <button
-            type="button"
-            onClick={() => setModalAction('REJECT')}
-            className="px-4 py-2.5 rounded-xl border border-red-500/50 bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-bold transition flex items-center gap-1.5"
-          >
-            <XCircle className="w-4 h-4" /> Từ chối
-          </button>
+              {/* Reject */}
+              <button
+                type="button"
+                onClick={() => setModalAction('REJECT')}
+                className="px-4 py-2.5 rounded-xl border border-red-500/50 bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-bold transition flex items-center gap-1.5"
+              >
+                <XCircle className="w-4 h-4" /> Từ chối
+              </button>
 
-          {/* Approve Button (Conditional on CIC checked) */}
-          <button
-            type="button"
-            disabled={!cicChecked}
-            onClick={() => setModalAction('APPROVE')}
-            className={`py-2.5 px-7 rounded-xl font-bold text-xs flex items-center gap-2 shadow-lg transition ${
-              cicChecked
-                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
-                : 'bg-slate-700 text-slate-400 cursor-not-allowed'
-            }`}
-            title={!cicChecked ? 'Vui lòng tích vào ô xác nhận đã kiểm tra CIC ở Cột 2' : 'Phê duyệt hồ sơ'}
-          >
-            <CheckCircle2 className="w-4 h-4" /> Chấp thuận cho vay (Approve)
-          </button>
+              {/* Approve Button (Conditional on CIC checked) */}
+              <button
+                type="button"
+                disabled={!cicChecked}
+                onClick={() => setModalAction('APPROVE')}
+                className={`py-2.5 px-7 rounded-xl font-bold text-xs flex items-center gap-2 shadow-lg transition ${
+                  cicChecked
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
+                    : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                }`}
+                title={!cicChecked ? 'Vui lòng tích vào ô xác nhận đã kiểm tra CIC ở Cột 2' : 'Phê duyệt hồ sơ'}
+              >
+                <CheckCircle2 className="w-4 h-4" /> Chấp thuận cho vay (Approve)
+              </button>
+            </>
+          )}
 
         </div>
 
@@ -588,6 +970,17 @@ const UnderwritingDetail = () => {
                 Hồ sơ: <strong className="font-mono text-slate-800">{appData.id}</strong> • Khách hàng: <strong className="text-slate-800">{appData.customerName}</strong>
               </p>
             </div>
+
+            {conflictError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  Xung đột thao tác đồng thời (Concurrency Conflict)
+                </div>
+                <p>{conflictError}</p>
+                <p className="text-[11px] text-slate-500 font-semibold">Hệ thống đã tự động khôi phục dữ liệu phiên bản mới nhất. Vui lòng kiểm tra lại trước khi phê duyệt.</p>
+              </div>
+            )}
 
             {actionSuccess ? (
               <div className="p-4 bg-emerald-50 rounded-2xl text-center text-xs font-bold text-emerald-800">

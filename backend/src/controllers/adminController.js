@@ -1,4 +1,11 @@
 const memoryStore = require('../store/memoryStore');
+const { 
+  broadcastAppraisalDecision, 
+  broadcastSupplementRequest, 
+  broadcastApplicationStatusChange,
+  broadcastDashboardStats,
+  broadcastDocumentSync
+} = require('../realtime/socketManager');
 
 // UC4.1 - Tra cứu & Quản lý danh sách hồ sơ vay
 const getAllApplications = async (req, res) => {
@@ -36,7 +43,7 @@ const getAllApplications = async (req, res) => {
 const appraiseApplication = async (req, res) => {
   try {
     const { id } = req.params;
-    const { decision, note, actionRequiredReason, approvedAmount } = req.body;
+    const { decision, note, actionRequiredReason, approvedAmount, expectedVersion } = req.body;
 
     // decision: 'APPROVE' | 'REJECT' | 'REQUEST_SUPPLEMENT'
     if (!['APPROVE', 'REJECT', 'REQUEST_SUPPLEMENT'].includes(decision)) {
@@ -52,13 +59,14 @@ const appraiseApplication = async (req, res) => {
     let actionTitle = '';
     let notifTitle = '';
     let notifMessage = '';
+    const updates = {};
 
     if (decision === 'APPROVE') {
       newStatus = 'APPROVED';
       actionTitle = 'Phê duyệt khoản vay';
-      app.approvedAmount = Number(approvedAmount) || app.requestedAmount;
+      updates.approvedAmount = Number(approvedAmount) || app.requestedAmount;
       notifTitle = 'Hồ sơ vay đã được PHÊ DUYỆT! 🎉';
-      notifMessage = `Chúc mừng! Hồ sơ ${app.applicationNo} đã được phê duyệt với số tiền ${app.approvedAmount.toLocaleString('vi-VN')} VNĐ.`;
+      notifMessage = `Chúc mừng! Hồ sơ ${app.applicationNo} đã được phê duyệt với số tiền ${updates.approvedAmount.toLocaleString('vi-VN')} VNĐ.`;
     } else if (decision === 'REJECT') {
       newStatus = 'REJECTED';
       actionTitle = 'Từ chối khoản vay';
@@ -67,36 +75,74 @@ const appraiseApplication = async (req, res) => {
     } else if (decision === 'REQUEST_SUPPLEMENT') {
       newStatus = 'ACTION_REQUIRED';
       actionTitle = 'Yêu cầu bổ sung chứng từ';
-      app.actionRequiredReason = actionRequiredReason || note || 'Cần bổ sung chứng từ rõ nét.';
+      updates.actionRequiredReason = actionRequiredReason || note || 'Cần bổ sung chứng từ rõ nét.';
       notifTitle = 'Yêu cầu bổ sung chứng từ hồ sơ vay';
-      notifMessage = `Chuyên viên thẩm định yêu cầu bổ sung chứng từ cho hồ sơ ${app.applicationNo}. Lý do: ${app.actionRequiredReason}`;
+      notifMessage = `Chuyên viên thẩm định yêu cầu bổ sung chứng từ cho hồ sơ ${app.applicationNo}. Lý do: ${updates.actionRequiredReason}`;
     }
 
-    app.status = newStatus;
-    app.appraisalNote = note || '';
+    updates.status = newStatus;
+    updates.appraisalNote = note || '';
+
+    // Optimistic Concurrency Update
+    const { updatedApp, event } = memoryStore.updateWithOptimisticLock(
+      app._id,
+      expectedVersion !== undefined ? Number(expectedVersion) : app.version,
+      updates,
+      {
+        userId: req.user.id,
+        role: req.user.role,
+        fullName: req.user.fullName
+      }
+    );
 
     // Audit Log timeline entry (UC5.3)
-    memoryStore.addAuditLog(id, {
+    memoryStore.addAuditLog(app._id, {
       action: actionTitle,
       performedBy: req.user.fullName,
       role: req.user.role,
+      actorType: 'CREDIT_OFFICER',
       note: note || actionRequiredReason || 'Thao tác thẩm định hồ sơ.'
     });
 
     // Send Notification to customer (UC5.1)
     memoryStore.createNotification({
-      recipientId: app.customerId,
-      loanId: app._id,
+      recipientId: updatedApp.customerId,
+      loanId: updatedApp._id,
       title: notifTitle,
       message: notifMessage
     });
 
+    // 1. CDC Realtime Event Envelope Broadcast
+    broadcastDocumentSync(event);
+
+    // 2. Legacy status broadcast
+    broadcastApplicationStatusChange(updatedApp, decision, {
+      id: req.user.id,
+      name: req.user.fullName,
+      role: req.user.role
+    });
+
+    if (decision === 'REQUEST_SUPPLEMENT') {
+      broadcastSupplementRequest(updatedApp, updatedApp.actionRequiredReason, req.user);
+    } else {
+      broadcastAppraisalDecision(updatedApp, decision, req.user);
+    }
+
     return res.json({
       success: true,
       message: `Đã cập nhật trạng thái hồ sơ thành: ${newStatus}`,
-      data: app
+      data: updatedApp,
+      version: updatedApp.version
     });
   } catch (error) {
+    if (error.code === 'CONCURRENCY_CONFLICT') {
+      return res.status(409).json({
+        success: false,
+        code: 'CONCURRENCY_CONFLICT',
+        message: error.message,
+        currentVersion: error.currentVersion
+      });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 };

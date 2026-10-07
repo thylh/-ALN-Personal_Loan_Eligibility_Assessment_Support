@@ -5,10 +5,10 @@ const { JWT_SECRET } = require('../middleware/authMiddleware');
 
 const register = async (req, res) => {
   try {
-    const { username, email, password, fullName, phone, identityCard } = req.body;
+    const { username, email, password, fullName, phone, identityCard, occupation } = req.body;
 
-    if (!email || !password || !fullName) {
-      return res.status(400).json({ success: false, message: 'Vui lòng điền đầy đủ email, mật khẩu và họ tên.' });
+    if (!email || !password || !fullName || !occupation) {
+      return res.status(400).json({ success: false, message: 'Vui lòng điền đầy đủ email, mật khẩu, họ tên và nghề nghiệp.' });
     }
 
     const existingUser = memoryStore.findUserByEmail(email);
@@ -22,13 +22,14 @@ const register = async (req, res) => {
       email,
       passwordHash,
       role: 'customer',
+      occupation: occupation || 'OTHER',
       fullName,
       phone: phone || '',
       identityCard: identityCard || ''
     });
 
     const token = jwt.sign(
-      { id: newUser._id, email: newUser.email, role: newUser.role },
+      { id: newUser._id, email: newUser.email, role: newUser.role, occupation: newUser.occupation },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -42,6 +43,7 @@ const register = async (req, res) => {
         username: newUser.username,
         email: newUser.email,
         role: newUser.role,
+        occupation: newUser.occupation,
         fullName: newUser.fullName,
         phone: newUser.phone,
         identityCard: newUser.identityCard
@@ -71,7 +73,7 @@ const login = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user._id, email: user.email, role: user.role },
+      { id: user._id, email: user.email, role: user.role, occupation: user.occupation || 'EMPLOYED' },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -85,6 +87,7 @@ const login = async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        occupation: user.occupation || 'EMPLOYED',
         fullName: user.fullName,
         phone: user.phone,
         identityCard: user.identityCard
@@ -109,6 +112,7 @@ const getMe = async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        occupation: user.occupation || 'EMPLOYED',
         fullName: user.fullName,
         phone: user.phone,
         identityCard: user.identityCard,
@@ -127,10 +131,14 @@ const updateProfile = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng.' });
     }
 
-    const { fullName, phone, identityCard } = req.body;
-    if (fullName) user.fullName = fullName;
-    if (phone) user.phone = phone;
-    if (identityCard) user.identityCard = identityCard;
+    const { fullName, phone, identityCard, occupation } = req.body;
+    const updateData = {};
+    if (fullName) updateData.fullName = fullName;
+    if (phone) updateData.phone = phone;
+    if (identityCard) updateData.identityCard = identityCard;
+    if (occupation) updateData.occupation = occupation;
+
+    memoryStore.updateUserProfile(user._id, updateData);
 
     return res.json({
       success: true,
@@ -140,6 +148,7 @@ const updateProfile = async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        occupation: user.occupation || 'EMPLOYED',
         fullName: user.fullName,
         phone: user.phone,
         identityCard: user.identityCard

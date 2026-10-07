@@ -4,17 +4,23 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 const dotenv = require('dotenv');
 
 dotenv.config();
 
 const { connectDB } = require('./config/db');
+const { initSocket } = require('./realtime/socketManager');
 const authRoutes = require('./routes/authRoutes');
 const loanRoutes = require('./routes/loanRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
+
+// Initialize Realtime WebSocket Engine
+initSocket(server);
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, '../uploads');
@@ -71,6 +77,6 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`[Server] Backend Express API active on http://localhost:${PORT}`);
+server.listen(PORT, () => {
+  console.log(`[Server] Backend Express & Socket.IO active on http://localhost:${PORT}`);
 });

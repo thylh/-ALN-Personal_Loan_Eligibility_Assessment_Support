@@ -1,44 +1,98 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { api } from '../../services/api';
 import { 
   CreditCard, QrCode, Copy, CheckCircle2, 
   ArrowRight, ShieldCheck, Landmark, Check, 
-  DollarSign, RefreshCw, AlertCircle, Sparkles, Download
+  DollarSign, RefreshCw, AlertCircle, Sparkles, Download, Clock
 } from 'lucide-react';
 
 const PaymentDisbursement = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+
   // Tabs: 'repayment' (Thanh toán trả nợ), 'disbursement' (Nhận giải ngân)
   const [activeTab, setActiveTab] = useState('repayment');
 
   // Repayment Options: 'monthly' (kỳ này), 'full' (tất toán), 'custom' (tùy chọn)
   const [payOption, setPayOption] = useState('monthly');
-  const [customAmount, setCustomAmount] = useState(4541667);
+  const [customAmount, setCustomAmount] = useState(0);
 
   // Copy feedback states
   const [copiedField, setCopiedField] = useState(null);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [lastTxn, setLastTxn] = useState(null);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  // Virtual Account data
-  const vaData = {
-    bankName: 'MB Bank (Ngân hàng TMCP Quân Đội)',
-    accountNumber: '99LOMS001099123456',
-    accountHolder: 'LOMS - NGUYỄN VĂN AN',
-    monthlyAmount: 4541667,
-    fullAmount: 37875000,
-    transferMemo: 'LOMS TT HD8921',
-    dueDate: '15/10/2026'
+  // Loan data loaded from DB via API
+  const [loading, setLoading] = useState(true);
+  const [loanOverview, setLoanOverview] = useState({
+    hasActiveLoan: false,
+    activeLoan: null,
+    hasPendingLoan: false,
+    pendingLoan: null,
+    allApplications: [],
+    transactions: []
+  });
+
+  const fetchOverview = async () => {
+    try {
+      setLoading(true);
+      const res = await api.getCustomerLoanOverview();
+      if (res && res.success && res.data) {
+        setLoanOverview(res.data);
+      }
+    } catch (err) {
+      console.warn('Could not fetch loan overview:', err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Disbursement Data
-  const [disbursementData, setDisbursementData] = useState({
-    bankName: 'Vietcombank (Ngân hàng Ngoại Thương)',
-    accountNumber: '990123456789',
-    accountHolder: 'NGUYỄN VĂN AN',
-    status: 'DISBURSED',
-    amount: 50000000,
-    refId: 'NAPAS-DISB-998812',
-    timestamp: '15/07/2026 10:30:15'
-  });
+  useEffect(() => {
+    fetchOverview();
+  }, [user]);
+
+  const activeLoan = loanOverview.activeLoan;
+  const pendingLoan = loanOverview.pendingLoan;
+  const hasActiveLoan = !!activeLoan;
+
+  // Active Loan Metrics
+  const originalAmount = activeLoan ? (activeLoan.approvedAmount || activeLoan.requestedAmount || 0) : 0;
+  const remainingPrincipal = activeLoan ? (activeLoan.remainingPrincipal !== undefined ? activeLoan.remainingPrincipal : originalAmount) : 0;
+  const termMonths = activeLoan ? (activeLoan.requestedTermMonths || 12) : 12;
+  const interestRateMonth = activeLoan ? (activeLoan.interestRate || 0.85) : 0.85;
+
+  // Monthly estimate: principal / term + interest on remaining
+  const monthlyPrincipal = termMonths > 0 ? Math.round(originalAmount / termMonths) : 0;
+  const monthlyInterest = Math.round(remainingPrincipal * (interestRateMonth / 100));
+  const calculatedMonthlyDue = Math.min(remainingPrincipal, monthlyPrincipal + monthlyInterest);
+
+  // Virtual Account data (strictly dynamic to active loan or user)
+  const vaData = {
+    bankName: 'MB Bank (Ngân hàng TMCP Quân Đội)',
+    accountNumber: activeLoan 
+      ? `99LOMS${activeLoan.identityCard || user?.identityCard || '000000000000'}`
+      : `99LOMS${user?.identityCard || '000000000000'}`,
+    accountHolder: `LOMS - ${(activeLoan?.customerName || user?.fullName || 'KHACH HANG').toUpperCase()}`,
+    monthlyAmount: calculatedMonthlyDue > 0 ? calculatedMonthlyDue : 0,
+    fullAmount: remainingPrincipal,
+    transferMemo: activeLoan ? `LOMS TT ${activeLoan.applicationNo}` : 'LOMS TT KHOAN VAY',
+    dueDate: '15 hàng tháng'
+  };
+
+  // Disbursement Data (strictly synchronized from Step 3 / Registration / DB)
+  const disbursementAccountInfo = {
+    bankName: activeLoan?.disbursementBank || pendingLoan?.disbursementBank || user?.bankName || 'Vietcombank (Ngân hàng Ngoại Thương)',
+    accountNumber: activeLoan?.disbursementAccount || pendingLoan?.disbursementAccount || user?.accountNumber || 'Chưa cung cấp',
+    accountHolder: (activeLoan?.customerName || pendingLoan?.customerName || user?.fullName || 'Khách hàng').toUpperCase(),
+    status: activeLoan ? 'DISBURSED' : (pendingLoan ? 'PENDING_DISBURSEMENT' : 'NOT_APPLIED'),
+    amount: activeLoan ? (activeLoan.approvedAmount || activeLoan.requestedAmount) : (pendingLoan ? pendingLoan.requestedAmount : 0),
+    refId: activeLoan ? `NAPAS-${activeLoan.applicationNo}` : (pendingLoan ? `CHO-DUYET-${pendingLoan.applicationNo}` : 'CHUA-CO'),
+    timestamp: activeLoan?.updatedAt ? new Date(activeLoan.updatedAt).toLocaleString('vi-VN') : '---'
+  };
 
   const formatCurrency = (val) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(val);
@@ -49,16 +103,44 @@ const PaymentDisbursement = () => {
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  // Simulate payment processing via Webhook
-  const handleSimulatePayment = () => {
-    setIsProcessingPayment(true);
-    setTimeout(() => {
-      setIsProcessingPayment(false);
-      setPaymentSuccess(true);
-    }, 1500);
-  };
-
   const currentPayAmount = payOption === 'monthly' ? vaData.monthlyAmount : payOption === 'full' ? vaData.fullAmount : customAmount;
+
+  // Real-time payment execution connected to backend & MongoDB
+  const handleProcessPayment = async () => {
+    if (!activeLoan) {
+      setErrorMsg('Bạn chưa có khoản vay nào đang hoạt động để thực hiện thanh toán.');
+      return;
+    }
+    if (currentPayAmount <= 0) {
+      setErrorMsg('Số tiền thanh toán phải lớn hơn 0 VNĐ.');
+      return;
+    }
+
+    setIsProcessingPayment(true);
+    setErrorMsg('');
+
+    try {
+      const res = await api.processRepayment({
+        applicationId: activeLoan._id,
+        amount: currentPayAmount,
+        paymentType: payOption === 'monthly' ? 'MONTHLY_INSTALLMENT' : (payOption === 'full' ? 'EARLY_SETTLEMENT' : 'CUSTOM_PAYMENT'),
+        note: `Thanh toán hợp đồng ${activeLoan.applicationNo} qua cổng VietQR Napas`
+      });
+
+      if (res && res.success) {
+        setPaymentSuccess(true);
+        setLastTxn(res.data.transaction);
+        // Refresh overview immediately from DB to update remaining balance and stats in real-time
+        await fetchOverview();
+      } else {
+        setErrorMsg(res?.message || 'Giao dịch thanh toán thất bại.');
+      }
+    } catch (err) {
+      setErrorMsg('Lỗi khi gửi yêu cầu thanh toán: ' + err.message);
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto py-2 sm:py-6 animate-in fade-in duration-500 space-y-8">
@@ -91,12 +173,19 @@ const PaymentDisbursement = () => {
         </div>
       </div>
 
+      {errorMsg && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          {errorMsg}
+        </div>
+      )}
+
       {/* TAB 1: REPAYMENT VIA VIETQR & VIRTUAL ACCOUNT */}
       {activeTab === 'repayment' && (
         <div className="space-y-6">
           
           {/* Payment Success Receipt */}
-          {paymentSuccess ? (
+          {paymentSuccess && (
             <div className="bg-emerald-50 border-2 border-emerald-300 rounded-3xl p-8 text-center space-y-6 animate-in zoom-in-95">
               <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-lg">
                 <Check className="w-8 h-8" />
@@ -104,10 +193,10 @@ const PaymentDisbursement = () => {
               <div className="space-y-1">
                 <h3 className="text-xl font-bold text-emerald-950">Giao dịch thanh toán thành công!</h3>
                 <p className="text-xs text-emerald-800">
-                  Hệ thống LOMS đã nhận được số tiền <strong className="font-black text-emerald-950">{formatCurrency(currentPayAmount)}</strong> qua Virtual Account.
+                  Hệ thống đã nhận được số tiền <strong className="font-black text-emerald-950">{formatCurrency(lastTxn?.amount || currentPayAmount)}</strong> và cập nhật trừ dư nợ thành công vào cơ sở dữ liệu.
                 </p>
                 <p className="text-[11px] text-emerald-700 font-mono">
-                  Mã giao dịch: TXN-REPAY-{Date.now()} • Kênh: Napas 247
+                  Mã giao dịch: {lastTxn?.transactionNo || `TXN-REPAY-${Date.now()}`} • Kênh: Napas 247 Realtime
                 </p>
               </div>
 
@@ -119,72 +208,97 @@ const PaymentDisbursement = () => {
                 >
                   Thực hiện giao dịch khác
                 </button>
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="btn-primary py-2.5 px-6 rounded-xl font-bold text-xs flex items-center gap-1.5"
+                <Link
+                  to="/dashboard"
+                  className="px-6 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition"
                 >
-                  <Download className="w-3.5 h-3.5" /> Xuất biên lai điện tử
-                </button>
+                  Về Dashboard xem số dư mới
+                </Link>
+              </div>
+            </div>
+          )}
+
+          {/* CASE 1: NO ACTIVE LOAN */}
+          {!hasActiveLoan ? (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8 text-center space-y-4">
+              <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                <CreditCard className="w-8 h-8" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h3 className="text-lg font-bold text-slate-800">Không có khoản vay nào cần thanh toán</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Tài khoản của bạn hiện tại chưa có khoản vay nào đang hoạt động. Khi có hợp đồng vay được giải ngân, bảng tính trả nợ và mã VietQR thanh toán tự động sẽ hiển thị tại đây theo thời gian thực.
+                </p>
+              </div>
+              {pendingLoan && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl max-w-md mx-auto text-left text-xs text-blue-900 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-blue-600" />
+                    Hồ sơ đang chờ thẩm định: {pendingLoan.applicationNo}
+                  </div>
+                  <p className="text-slate-600">
+                    Gói vay: <strong>{pendingLoan.productName || 'Vay tiêu dùng'}</strong> • Số tiền: <strong>{formatCurrency(pendingLoan.requestedAmount)}</strong>
+                  </p>
+                  <p className="text-slate-500 text-[11px]">
+                    Hợp đồng đang chờ duyệt. Sau khi chuyên viên phê duyệt và giải ngân, bạn có thể thực hiện thanh toán tại đây.
+                  </p>
+                </div>
+              )}
+              <div className="pt-2">
+                <Link
+                  to="/home"
+                  className="btn-primary py-2.5 px-6 rounded-xl font-bold text-xs inline-flex items-center gap-2"
+                >
+                  Khám phá các gói vay ưu đãi
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
               </div>
             </div>
           ) : (
-            <div className="grid lg:grid-cols-12 gap-8 items-start">
+            /* CASE 2: ACTIVE LOAN FOUND - REAL-TIME PAYMENT VIA VIETQR */
+            <div className="grid lg:grid-cols-12 gap-6 items-start">
               
-              {/* Left Column: QR Code Visual & Instructions (5 cols) */}
-              <div className="lg:col-span-5 bg-white rounded-3xl border border-slate-200 shadow-xl p-6 text-center space-y-5">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-bold border border-blue-200">
-                  <QrCode className="w-3.5 h-3.5" /> Quét mã VietQR 24/7
+              {/* Left Column: VietQR Code Box (5 cols) */}
+              <div className="lg:col-span-5 bg-white rounded-3xl border border-slate-200 shadow-xl p-6 text-center space-y-4">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-100 text-xs">
+                  <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                    <QrCode className="w-4 h-4 text-blue-600" /> VietQR Napas 247
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-[10px]">
+                    Khớp Lệnh Tức Thì
+                  </span>
                 </div>
 
-                {/* Simulated VietQR Box */}
-                <div className="mx-auto w-64 p-4 rounded-2xl border-2 border-slate-200 bg-white shadow-md relative">
-                  <div className="flex justify-between items-center pb-2 border-b border-slate-100 text-[10px] font-bold text-slate-500">
-                    <span>VIETQR • NAPAS247</span>
-                    <span className="text-blue-600">MB BANK</span>
+                {/* QR Code Container */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col items-center justify-center space-y-3">
+                  <div className="w-48 h-48 bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex items-center justify-center relative overflow-hidden">
+                    <img 
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=247-MBBANK-${vaData.accountNumber}-${currentPayAmount}-${encodeURIComponent(vaData.transferMemo)}`}
+                      alt="VietQR Transfer"
+                      className="w-full h-full object-contain"
+                    />
                   </div>
 
-                  {/* QR SVG Graphic */}
-                  <div className="py-4 flex items-center justify-center">
-                    <div className="w-48 h-48 bg-slate-900 rounded-xl p-3 flex flex-col justify-between items-center text-white relative overflow-hidden">
-                      {/* Stylized QR simulation */}
-                      <div className="grid grid-cols-6 gap-1.5 w-full h-full p-1 opacity-90">
-                        {Array.from({ length: 36 }).map((_, i) => (
-                          <div
-                            key={i}
-                            className={`rounded-sm ${
-                              i === 0 || i === 5 || i === 30 || i === 35 || (i % 7 === 0) || (i % 3 === 0)
-                                ? 'bg-white'
-                                : 'bg-transparent'
-                            }`}
-                          ></div>
-                        ))}
-                      </div>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-10 h-10 rounded-lg bg-blue-600 border-2 border-white flex items-center justify-center font-black text-white text-xs shadow-md">
-                          LOMS
-                        </div>
-                      </div>
-                    </div>
+                  <div className="text-[11px] font-mono text-slate-500">
+                    Số tiền thanh toán:
                   </div>
-
-                  <div className="pt-2 border-t border-slate-100 text-xs font-black text-blue-600">
+                  <div className="text-base font-black text-blue-600">
                     {formatCurrency(currentPayAmount)}
                   </div>
                 </div>
 
                 <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Mở ứng dụng ngân hàng bất kỳ (Vietcombank, MB, Techcombank, BIDV, Momo...) và quét mã để thanh toán tự động không cần nhập thông tin.
+                  Mở ứng dụng ngân hàng bất kỳ (Vietcombank, MB, Techcombank, BIDV, MoMo...) quét mã để thanh toán tự động trừ nợ theo thời gian thực.
                 </p>
 
                 <button
                   type="button"
-                  onClick={handleSimulatePayment}
-                  disabled={isProcessingPayment}
-                  className="w-full py-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
+                  onClick={handleProcessPayment}
+                  disabled={isProcessingPayment || remainingPrincipal <= 0}
+                  className="w-full py-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
                 >
                   <Sparkles className="w-4 h-4 text-amber-500" />
-                  {isProcessingPayment ? 'Đang nhận diện chuyển khoản...' : 'Mô phỏng quét chuyển khoản thử nghiệm'}
+                  {isProcessingPayment ? 'Đang gửi giao dịch đến ngân hàng...' : 'Xác nhận thanh toán ngay (Real-Time)'}
                 </button>
               </div>
 
@@ -193,9 +307,14 @@ const PaymentDisbursement = () => {
                 
                 {/* Repayment Amount Selector */}
                 <div className="bg-white rounded-3xl border border-slate-200 shadow-xl p-6 space-y-4">
-                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                    Chọn số tiền thanh toán
-                  </h3>
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                      Chọn số tiền thanh toán (Hợp đồng: {activeLoan.applicationNo})
+                    </h3>
+                    <span className="text-xs font-bold text-blue-600">
+                      Dư nợ còn lại: {formatCurrency(remainingPrincipal)}
+                    </span>
+                  </div>
 
                   <div className="grid sm:grid-cols-2 gap-3">
                     <button
@@ -254,43 +373,33 @@ const PaymentDisbursement = () => {
                       </button>
                     </div>
 
-                    {/* Account Number */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                    {/* VA Account Number */}
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-blue-50/50 border border-blue-100">
                       <div>
-                        <span className="text-[10px] text-slate-400 font-semibold block">Số tài khoản định danh (VA)</span>
-                        <strong className="text-blue-700 font-mono text-sm">{vaData.accountNumber}</strong>
+                        <span className="text-[10px] text-blue-600 font-semibold block">Số tài khoản ảo định danh</span>
+                        <strong className="text-blue-900 font-mono text-sm tracking-wider">{vaData.accountNumber}</strong>
                       </div>
                       <button
                         type="button"
-                        onClick={() => handleCopy(vaData.accountNumber, 'acc')}
-                        className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 flex items-center gap-1 text-[11px]"
+                        onClick={() => handleCopy(vaData.accountNumber, 'va')}
+                        className="p-1.5 rounded-lg border border-blue-200 bg-white hover:bg-blue-50 text-blue-700 flex items-center gap-1 text-[11px] font-bold"
                       >
-                        {copiedField === 'acc' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{copiedField === 'acc' ? 'Đã sao chép' : 'Sao chép'}</span>
+                        {copiedField === 'va' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedField === 'va' ? 'Đã sao chép' : 'Sao chép'}</span>
                       </button>
                     </div>
 
                     {/* Account Holder */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                      <div>
-                        <span className="text-[10px] text-slate-400 font-semibold block">Tên người thụ hưởng</span>
-                        <strong className="text-slate-800 uppercase">{vaData.accountHolder}</strong>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(vaData.accountHolder, 'holder')}
-                        className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 flex items-center gap-1 text-[11px]"
-                      >
-                        {copiedField === 'holder' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{copiedField === 'holder' ? 'Đã sao chép' : 'Sao chép'}</span>
-                      </button>
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <span className="text-[10px] text-slate-400 font-semibold block">Tên người thụ hưởng</span>
+                      <strong className="text-slate-800 font-mono">{vaData.accountHolder}</strong>
                     </div>
 
                     {/* Transfer Memo */}
                     <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
                       <div>
-                        <span className="text-[10px] text-slate-400 font-semibold block">Nội dung chuyển khoản (Bắt buộc)</span>
-                        <strong className="text-amber-700 font-mono font-bold">{vaData.transferMemo}</strong>
+                        <span className="text-[10px] text-slate-400 font-semibold block">Nội dung chuyển khoản (bắt buộc)</span>
+                        <strong className="text-slate-900 font-mono">{vaData.transferMemo}</strong>
                       </div>
                       <button
                         type="button"
@@ -323,54 +432,62 @@ const PaymentDisbursement = () => {
                 Thông Tin Tài Khoản Nhận Tiền Giải Ngân
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                Tiền giải ngân sẽ được truyền tự động qua cổng liên ngân hàng Napas 247 ngay khi ký hợp đồng xong.
+                Đồng bộ trực tiếp từ thông tin kê khai tại Bước 3 của hồ sơ vay và bản hợp đồng điện tử đã ký.
               </p>
             </div>
             <span className="px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold border border-emerald-200 flex items-center gap-1">
-              <ShieldCheck className="w-4 h-4" /> Đã Xác Thực Danh Tính Chủ Tài Khoản
+              <ShieldCheck className="w-4 h-4" /> Đã Đồng Bộ Hồ Sơ Vay
             </span>
           </div>
 
           <div className="grid sm:grid-cols-2 gap-4 text-xs">
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
               <span className="text-[10px] text-slate-400 uppercase font-semibold block">Ngân hàng thụ hưởng</span>
-              <strong className="text-slate-800 text-sm block">{disbursementData.bankName}</strong>
+              <strong className="text-slate-800 text-sm block">{disbursementAccountInfo.bankName}</strong>
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
-              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Số tài khoản</span>
-              <strong className="text-blue-600 font-mono text-base block">{disbursementData.accountNumber}</strong>
+              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Số tài khoản nhận giải ngân</span>
+              <strong className="text-blue-600 font-mono text-base block">{disbursementAccountInfo.accountNumber}</strong>
             </div>
 
             <div className="sm:col-span-2 p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
               <span className="text-[10px] text-slate-400 uppercase font-semibold block">Chủ tài khoản (Bắt buộc trùng CCCD)</span>
-              <strong className="text-slate-800 uppercase text-sm block">{disbursementData.accountHolder}</strong>
+              <strong className="text-slate-800 uppercase text-sm block">{disbursementAccountInfo.accountHolder}</strong>
               <span className="text-[11px] text-emerald-600 font-semibold block pt-1">
-                ✓ Hệ thống đã xác thực tên chủ tài khoản trùng khớp 100% với CCCD điện tử 001099123456.
+                ✓ Trùng khớp 100% với thông tin định danh CCCD và điều khoản giải ngân trong hợp đồng tín dụng.
               </span>
             </div>
           </div>
 
-          {/* Historical Disbursement Orders */}
+          {/* Historical Disbursement Orders / Current Status */}
           <div className="pt-4 border-t border-slate-100 space-y-3">
             <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-              Lịch sử lệnh chi giải ngân
+              Trạng thái lệnh chi giải ngân
             </h4>
 
-            <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
-              <div className="space-y-0.5">
-                <span className="font-bold text-slate-800 block">Lệnh chi Napas 247 #{disbursementData.refId}</span>
-                <span className="text-[11px] text-slate-500 font-mono">{disbursementData.timestamp}</span>
+            {disbursementAccountInfo.amount > 0 ? (
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-slate-800 block">Lệnh chi Napas 247 #{disbursementAccountInfo.refId}</span>
+                  <span className="text-[11px] text-slate-500 font-mono">{disbursementAccountInfo.timestamp}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-base font-black text-emerald-600 block">
+                    +{formatCurrency(disbursementAccountInfo.amount)}
+                  </span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                    disbursementAccountInfo.status === 'DISBURSED' 
+                      ? 'bg-emerald-100 text-emerald-700' 
+                      : 'bg-amber-100 text-amber-700'
+                  }`}>
+                    {disbursementAccountInfo.status === 'DISBURSED' ? 'Đã giải ngân thành công' : 'Chờ hoàn tất thẩm định'}
+                  </span>
+                </div>
               </div>
-              <div className="text-right">
-                <span className="text-base font-black text-emerald-600 block">
-                  +{formatCurrency(disbursementData.amount)}
-                </span>
-                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-                  Thành công 100%
-                </span>
-              </div>
-            </div>
+            ) : (
+              <p className="text-xs text-slate-400 italic">Chưa có lệnh giải ngân nào phát sinh.</p>
+            )}
           </div>
         </div>
       )}

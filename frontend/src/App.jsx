@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
 import Navbar from './components/Navbar';
 
 // CUSTOMER PAGES
@@ -17,6 +18,7 @@ import ProfileSettings from './pages/customer/ProfileSettings';
 import NotificationCenter from './pages/customer/NotificationCenter';
 import SupportHelp from './pages/customer/SupportHelp';
 import Referral from './pages/customer/Referral';
+import LoanProductDetail from './pages/customer/LoanProductDetail';
 
 // ADMIN PAGES
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -57,7 +59,8 @@ function RootRedirect() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <SocketProvider>
+        <BrowserRouter>
         <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-blue-500 selection:text-white">
           <Navbar />
           <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -65,6 +68,8 @@ export default function App() {
               {/* PUBLIC ROUTES */}
               <Route path="/" element={<RootRedirect />} />
               <Route path="/home" element={<Home />} />
+              <Route path="/loan-products/:id" element={<LoanProductDetail />} />
+              <Route path="/products/:id" element={<LoanProductDetail />} />
               <Route path="/login" element={<LoginRegister />} />
               <Route path="/support" element={<SupportHelp />} />
               <Route path="/referral" element={<Referral />} />
@@ -195,6 +200,7 @@ export default function App() {
           </footer>
         </div>
       </BrowserRouter>
+    </SocketProvider>
     </AuthProvider>
   );
 }

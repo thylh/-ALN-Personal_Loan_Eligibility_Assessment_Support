@@ -54,6 +54,13 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('verifiedEkyc');
+    localStorage.removeItem('loanApplicationDraft');
+    localStorage.removeItem('selectedLoanProposal');
+    localStorage.removeItem('activeLoanStatus');
+    localStorage.removeItem('uploadedLoanDocuments');
+    localStorage.removeItem('lastApplicationId');
+    localStorage.removeItem('lastApplicationNo');
     setToken(null);
     setUser(null);
   };
@@ -69,8 +76,12 @@ export const AuthProvider = ({ children }) => {
     return await login(email, 'password123');
   };
 
+  const updateCurrentUser = (partialUser) => {
+    setUser(prev => prev ? ({ ...prev, ...partialUser }) : partialUser);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, quickDemoLogin }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, quickDemoLogin, updateCurrentUser }}>
       {children}
     </AuthContext.Provider>
   );

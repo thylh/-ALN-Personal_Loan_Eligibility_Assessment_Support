@@ -5,24 +5,27 @@ import {
   ArrowRight, ArrowLeft, Download, Printer, CheckCircle2, 
   AlertCircle, Sparkles, KeyRound, Stamp, Lock
 } from 'lucide-react';
+import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 const EContract = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const contractScrollRef = useRef(null);
 
   // eKYC & Form data from previous steps
   const [contractData, setContractData] = useState({
-    contractId: 'HD-2026-LOMS-8921',
-    customerName: 'NGUYỄN VĂN AN',
-    idNumber: '001099123456',
-    phone: '0901234567',
-    address: 'Số 45 ngõ 120 đường Hoàng Quốc Việt, Phường Cổ Nhuế 1, Quận Bắc Từ Liêm, TP. Hà Nội',
+    contractId: 'HD-2026-LOMS-' + Math.floor(1000 + Math.random() * 9000),
+    customerName: user?.fullName ? user.fullName.toUpperCase() : '',
+    idNumber: user?.identityCard || '',
+    phone: user?.phone || '',
+    address: '',
     loanAmount: 50000000,
     termMonths: 12,
-    interestRateYear: 12.0, // 1.0%/month
-    monthlyRepayment: 4666667,
+    interestRateYear: 10.2, // 0.85%/month * 12
+    monthlyRepayment: 4500000,
     disbursementBank: 'Vietcombank (Ngân hàng Ngoại Thương)',
-    disbursementAccount: '990123456789'
+    disbursementAccount: ''
   });
 
   // Scroll condition
@@ -45,25 +48,48 @@ const EContract = () => {
     const savedProposal = localStorage.getItem('selectedLoanProposal');
     const savedApp = localStorage.getItem('loanApplicationDraft');
 
+    let updated = {};
+    if (user) {
+      updated.customerName = user.fullName ? user.fullName.toUpperCase() : '';
+      updated.idNumber = user.identityCard || '';
+      updated.phone = user.phone || '';
+    }
+
+    if (savedEkyc) {
+      try {
+        const ekyc = JSON.parse(savedEkyc);
+        if (ekyc.fullName) updated.customerName = ekyc.fullName.toUpperCase();
+        if (ekyc.idNumber) updated.idNumber = ekyc.idNumber;
+        if (ekyc.address) updated.address = ekyc.address;
+      } catch (err) {}
+    }
+
+    if (savedProposal) {
+      try {
+        const prop = JSON.parse(savedProposal);
+        if (prop.amount) updated.loanAmount = prop.amount;
+        if (prop.termMonths) updated.termMonths = prop.termMonths;
+        if (prop.interestRate) updated.interestRateYear = (prop.interestRate * 12).toFixed(1);
+        if (prop.monthlyEstimate) updated.monthlyRepayment = prop.monthlyEstimate;
+      } catch (err) {}
+    }
+
     if (savedApp) {
       try {
         const app = JSON.parse(savedApp);
-        setContractData(prev => ({
-          ...prev,
-          customerName: app.ekyc?.fullName || prev.customerName,
-          idNumber: app.ekyc?.idNumber || prev.idNumber,
-          phone: app.form?.phone || prev.phone,
-          address: app.form?.currentAddress || prev.address,
-          loanAmount: app.loanProposal?.amount || prev.loanAmount,
-          termMonths: app.loanProposal?.termMonths || prev.termMonths,
-          disbursementBank: app.form?.bankName || prev.disbursementBank,
-          disbursementAccount: app.form?.accountNumber || prev.disbursementAccount
-        }));
-      } catch (err) {
-        console.error(err);
-      }
+        if (app.ekyc?.fullName) updated.customerName = app.ekyc.fullName.toUpperCase();
+        if (app.ekyc?.idNumber) updated.idNumber = app.ekyc.idNumber;
+        if (app.form?.phone) updated.phone = app.form.phone;
+        if (app.form?.currentAddress) updated.address = app.form.currentAddress;
+        if (app.form?.bankName) updated.disbursementBank = app.form.bankName;
+        if (app.form?.accountNumber) updated.disbursementAccount = app.form.accountNumber;
+        if (app.loanProposal?.amount) updated.loanAmount = app.loanProposal.amount;
+        if (app.loanProposal?.termMonths) updated.termMonths = app.loanProposal.termMonths;
+      } catch (err) {}
     }
-  }, []);
+
+    setContractData(prev => ({ ...prev, ...updated }));
+  }, [user]);
 
   // Check scroll position to end of document
   const handleScroll = () => {
@@ -91,7 +117,7 @@ const EContract = () => {
   };
 
   // Sign contract
-  const handleConfirmSignature = () => {
+  const handleConfirmSignature = async () => {
     const code = otpCode.join('');
     if (code.length < 6) {
       setErrorMsg('Vui lòng nhập đầy đủ mã OTP 6 số để ký số.');
@@ -100,13 +126,60 @@ const EContract = () => {
 
     setIsSigning(true);
     setErrorMsg('');
-    setTimeout(() => {
+
+    try {
+      const appDraft = JSON.parse(localStorage.getItem('loanApplicationDraft') || '{}');
+      const uploadedDocs = JSON.parse(localStorage.getItem('uploadedLoanDocuments') || '[]');
+
+      const payload = {
+        requestedAmount: Number(contractData.loanAmount),
+        requestedTermMonths: Number(contractData.termMonths),
+        loanPurpose: 'Tiêu dùng cá nhân',
+        disbursementBank: contractData.disbursementBank || appDraft.form?.bankName || (user ? user.bankName : ''),
+        disbursementAccount: contractData.disbursementAccount || appDraft.form?.accountNumber || (user ? user.accountNumber : ''),
+        occupation: user?.occupation || appDraft.ekyc?.occupation || 'OTHER',
+        productId: appDraft.loanProposal?.productId || '',
+        productName: appDraft.loanProposal?.productName || '',
+        interestRate: Number(appDraft.loanProposal?.interestRate) || 0.85,
+        personalDetails: {
+          fullName: contractData.customerName,
+          identityCard: contractData.idNumber,
+          phone: contractData.phone,
+          address: contractData.address,
+          bankName: contractData.disbursementBank || appDraft.form?.bankName,
+          accountNumber: contractData.disbursementAccount || appDraft.form?.accountNumber,
+          ...(appDraft.form || {})
+        },
+        financialDetails: {
+          grossMonthlyIncome: Number(appDraft.form?.monthlyIncome) || 0,
+          monthlyExpenses: Number(appDraft.form?.monthlyExpenses) || 0,
+          otherIncome: Number(appDraft.form?.otherIncome) || 0,
+          existingMonthlyDebt: Number(appDraft.form?.existingDebtPayment) || 0,
+          workTenureMonths: Number(appDraft.form?.workTenureMonths) || 0,
+          workTenureYears: (Number(appDraft.form?.workTenureMonths) || 0) / 12,
+          employerName: appDraft.form?.companyName || (user?.occupation === 'STUDENT' ? 'Trường Đại học' : ''),
+          jobTitle: appDraft.form?.jobTitle || (user?.occupation === 'STUDENT' ? 'Sinh viên' : ''),
+          creditHistoryScore: 85
+        },
+        documents: uploadedDocs
+      };
+
+      const res = await api.submitLoanApplication(payload);
+
       setIsSigning(false);
       setIsSigned(true);
       setShowOtpModal(false);
-      // Persist signed status
-      localStorage.setItem('activeLoanStatus', 'ACTIVE_DISBURSED');
-    }, 1200);
+
+      // Persist signed status and application id
+      localStorage.setItem('activeLoanStatus', 'SUBMITTED');
+      if (res?.data?._id) {
+        localStorage.setItem('lastApplicationId', res.data._id);
+        localStorage.setItem('lastApplicationNo', res.data.applicationNo);
+      }
+    } catch (err) {
+      setIsSigning(false);
+      setErrorMsg('Lỗi khi nộp hồ sơ tới máy chủ: ' + err.message);
+    }
   };
 
   return (
