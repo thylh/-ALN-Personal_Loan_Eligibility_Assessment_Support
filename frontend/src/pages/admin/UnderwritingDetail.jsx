@@ -5,17 +5,25 @@ import {
   XCircle, FileText, ZoomIn, ZoomOut, RotateCw, 
   Lock, DollarSign, Clock, User, Briefcase, 
   Users, Landmark, Check, AlertCircle, FileCheck,
-  MessageSquare, Send, Radio, Eye
+  MessageSquare, Send, Radio, Eye, EyeOff,
+  PhoneCall, Calendar, History, ShieldAlert, Laptop, ChevronRight
 } from 'lucide-react';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import CustomerProfile360Modal from '../../components/CustomerProfile360Modal';
 
 const UnderwritingDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const isAdminViewOnly = currentUser?.role === 'admin';
+
+  // Customer 360 Modal State
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profile360Data, setProfile360Data] = useState(null);
+  const [loadingProfile360, setLoadingProfile360] = useState(false);
+  const [profileActiveTab, setProfileActiveTab] = useState('loans'); // 'loans', 'payments', 'reminders', 'matrix'
 
   // Application details
   const [appData, setAppData] = useState({
@@ -241,6 +249,21 @@ const UnderwritingDetail = () => {
   const formatCurrency = (val) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(val);
 
+  const handleOpenProfile360 = async () => {
+    setShowProfileModal(true);
+    setLoadingProfile360(true);
+    try {
+      const res = await api.getCustomerProfile360(appData._id || id);
+      if (res && res.success) {
+        setProfile360Data(res.data);
+      }
+    } catch (err) {
+      console.warn('Could not load 360 profile:', err);
+    } finally {
+      setLoadingProfile360(false);
+    }
+  };
+
   const [conflictError, setConflictError] = useState('');
 
   const handleDecisionSubmit = async () => {
@@ -295,9 +318,19 @@ const UnderwritingDetail = () => {
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-base font-black text-blue-700 font-mono">{appData.id}</span>
-              <span className="text-base font-black text-slate-900">• {appData.customerName}</span>
+              <button
+                type="button"
+                onClick={handleOpenProfile360}
+                className="text-base font-black text-slate-900 hover:text-blue-600 hover:underline flex items-center gap-1.5 transition text-left cursor-pointer group"
+                title="Nhấn để xem Hồ sơ Khách hàng 360, Lịch sử vay & Ma trận phân quyền"
+              >
+                <span>• {appData.customerName}</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition">
+                  Hồ sơ 360°
+                </span>
+              </button>
               <span className={`risk-badge-${appData.riskGrade}`}>
                 Hạng {appData.riskGrade} ({appData.score} đ)
               </span>
@@ -317,8 +350,21 @@ const UnderwritingDetail = () => {
           <span className="px-3 py-1 bg-red-50 text-red-700 rounded-full text-xs font-mono font-bold border border-red-200 flex items-center gap-1.5 animate-pulse">
             <Clock className="w-3.5 h-3.5" /> SLA: 14 phút
           </span>
-          <span className="px-3 py-1 bg-amber-50 text-amber-700 rounded-full text-xs font-bold border border-amber-200">
-            {appData.status === 'APPROVED' ? 'Đã phê duyệt' : appData.status === 'REJECTED' ? 'Đã từ chối' : appData.status === 'ACTION_REQUIRED' ? 'Chờ bổ sung' : 'Chờ thẩm định viên'}
+          <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+            appData.status === 'COMPLETED' || appData.status === 'SETTLED'
+              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+              : appData.status === 'APPROVED' 
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : appData.status === 'REJECTED'
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : appData.status === 'ACTION_REQUIRED'
+              ? 'bg-orange-50 text-orange-700 border-orange-200'
+              : 'bg-amber-50 text-amber-700 border-amber-200'
+          }`}>
+            {appData.status === 'COMPLETED' || appData.status === 'SETTLED' ? 'Khoản vay đã tất toán toàn bộ' :
+             appData.status === 'APPROVED' ? 'Đã phê duyệt' : 
+             appData.status === 'REJECTED' ? 'Đã từ chối' : 
+             appData.status === 'ACTION_REQUIRED' ? 'Chờ bổ sung' : 'Chờ thẩm định viên'}
           </span>
         </div>
       </div>
@@ -885,9 +931,22 @@ const UnderwritingDetail = () => {
           </div>
         )}
 
-        {/* Action Buttons or Admin Read-Only Status */}
+        {/* Action Buttons or Admin / Settled Read-Only Status */}
         <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          {isAdminViewOnly ? (
+          {appData.status === 'COMPLETED' || appData.status === 'SETTLED' ? (
+            <div className="flex items-center gap-2">
+              <span className="px-4 py-2 rounded-xl text-xs font-bold border bg-emerald-500/20 text-emerald-300 border-emerald-500/40 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Khoản vay đã tất toán toàn bộ - Không thể thao tác lại
+              </span>
+              <button
+                type="button"
+                onClick={() => { setActiveDocTab('contract'); window.scrollTo({ top: 300, behavior: 'smooth' }); }}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1.5 transition"
+              >
+                <FileText className="w-4 h-4" /> Xem hợp đồng & hồ sơ
+              </button>
+            </div>
+          ) : isAdminViewOnly ? (
             <div className="flex items-center gap-2">
               <span className={`px-4 py-2 rounded-xl text-xs font-bold border ${
                 appData.status === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' :
@@ -1049,8 +1108,30 @@ const UnderwritingDetail = () => {
         </div>
       )}
 
+      {/* MODAL: CUSTOMER PROFILE 360° & MATRIX ACCESS */}
+      <CustomerProfile360Modal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        customerData={{
+          id: appData.id,
+          _id: appData._id,
+          customerName: appData.customerName,
+          phone: appData.phone,
+          idNumber: appData.idNumber,
+          requestedAmount: appData.requestedAmount,
+          termMonths: appData.termMonths,
+          product: appData.product,
+          riskGrade: appData.riskGrade,
+          score: appData.score,
+          occupation: appData.position || 'Nhân viên văn phòng',
+          company: appData.company,
+          status: appData.status
+        }}
+      />
+
     </div>
   );
 };
 
 export default UnderwritingDetail;
+

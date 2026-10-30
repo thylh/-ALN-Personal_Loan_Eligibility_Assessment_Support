@@ -161,6 +161,223 @@ const initialApplications = [
     ],
     createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
     updatedAt: new Date().toISOString()
+  },
+  {
+    _id: 'LOS-2026-001',
+    applicationNo: 'LOS-2026-001',
+    customerId: 'u_customer_1',
+    customerName: 'Nguyễn Văn An',
+    customerPhone: '0901234567',
+    identityCard: '001099123456',
+    requestedAmount: 50000000,
+    requestedTermMonths: 12,
+    loanPurpose: 'Vay tín chấp theo lương',
+    personalDetails: {
+      fullName: 'Nguyễn Văn An',
+      phone: '0901234567',
+      identityCard: '001099123456',
+      dob: '15/05/1992',
+      gender: 'Nam',
+      address: '123 Nguyễn Trãi, Quận 1, TP.HCM',
+      maritalStatus: 'Đã kết hôn',
+      educationLevel: 'Đại học',
+      dependents: 1
+    },
+    financialDetails: {
+      grossMonthlyIncome: 35000000,
+      monthlyExpenses: 12000000,
+      employerName: 'Công ty TNHH Công Nghệ Việt',
+      jobTitle: 'Kỹ sư phần mềm'
+    },
+    scoringResult: {
+      score: 785,
+      riskGrade: 'A',
+      riskLevel: 'Rủi ro Thấp'
+    },
+    status: 'SUBMITTED',
+    version: 1,
+    createdAt: '2026-09-27T10:15:00.000Z',
+    updatedAt: new Date().toISOString()
+  },
+  {
+    _id: 'LOS-2026-002',
+    applicationNo: 'LOS-2026-002',
+    customerId: 'u_customer_2',
+    customerName: 'Lê Hoàng Nam',
+    customerPhone: '0987654321',
+    identityCard: '001098877665',
+    requestedAmount: 120000000,
+    requestedTermMonths: 24,
+    loanPurpose: 'Vay hộ kinh doanh',
+    personalDetails: {
+      fullName: 'Lê Hoàng Nam',
+      phone: '0987654321',
+      identityCard: '001098877665',
+      dob: '20/08/1988',
+      gender: 'Nam',
+      address: '45 Lê Duẩn, Hoàn Kiếm, Hà Nội',
+      maritalStatus: 'Đã kết hôn',
+      educationLevel: 'Đại học'
+    },
+    financialDetails: {
+      grossMonthlyIncome: 55000000,
+      monthlyExpenses: 25000000,
+      employerName: 'Cửa hàng Nội thất Nam Phát',
+      jobTitle: 'Chủ hộ kinh doanh'
+    },
+    scoringResult: {
+      score: 690,
+      riskGrade: 'B',
+      riskLevel: 'Rủi ro Trung bình'
+    },
+    status: 'UNDER_REVIEW',
+    version: 1,
+    createdAt: '2026-09-27T09:30:00.000Z',
+    updatedAt: new Date().toISOString()
+  },
+  {
+    _id: 'LOS-2026-003',
+    applicationNo: 'LOS-2026-003',
+    customerId: 'u_customer_3',
+    customerName: 'Vũ Thị Mai',
+    customerPhone: '0912334455',
+    identityCard: '001099334455',
+    requestedAmount: 30000000,
+    requestedTermMonths: 6,
+    loanPurpose: 'Vay sinh viên & trẻ',
+    personalDetails: {
+      fullName: 'Vũ Thị Mai',
+      phone: '0912334455',
+      identityCard: '001099334455',
+      dob: '10/11/2002',
+      gender: 'Nữ',
+      address: '78 Nguyễn Đình Chiểu, Quận 3, TP.HCM',
+      maritalStatus: 'Độc thân',
+      educationLevel: 'Đại học'
+    },
+    financialDetails: {
+      grossMonthlyIncome: 12000000,
+      monthlyExpenses: 5000000,
+      employerName: 'Công ty CP Truyền Thông Á Châu',
+      jobTitle: 'Thực tập sinh Marketing'
+    },
+    scoringResult: {
+      score: 740,
+      riskGrade: 'A',
+      riskLevel: 'Rủi ro Thấp'
+    },
+    status: 'SUBMITTED',
+    version: 1,
+    createdAt: '2026-09-27T11:00:00.000Z',
+    updatedAt: new Date().toISOString()
+  },
+  {
+    _id: 'LOS-2026-004',
+    applicationNo: 'LOS-2026-004',
+    customerId: 'u_customer_4',
+    customerName: 'Đặng Quốc Huy',
+    customerPhone: '0933221100',
+    identityCard: '001097223344',
+    requestedAmount: 80000000,
+    requestedTermMonths: 18,
+    loanPurpose: 'Vay theo hóa đơn',
+    personalDetails: {
+      fullName: 'Đặng Quốc Huy',
+      phone: '0933221100',
+      identityCard: '001097223344',
+      dob: '05/03/1995',
+      gender: 'Nam',
+      address: '12 Bạch Đằng, Hải Châu, Đà Nẵng',
+      maritalStatus: 'Đã kết hôn',
+      educationLevel: 'Cao đẳng'
+    },
+    financialDetails: {
+      grossMonthlyIncome: 20000000,
+      monthlyExpenses: 11000000,
+      employerName: 'Công ty Vận tải Hải Vân',
+      jobTitle: 'Nhân viên điều độ'
+    },
+    scoringResult: {
+      score: 580,
+      riskGrade: 'C',
+      riskLevel: 'Rủi ro Cao'
+    },
+    status: 'ACTION_REQUIRED',
+    version: 1,
+    createdAt: '2026-09-26T16:45:00.000Z',
+    updatedAt: new Date().toISOString()
+  },
+  {
+    _id: 'LOS-2026-005',
+    applicationNo: 'LOS-2026-005',
+    customerId: 'u_customer_5',
+    customerName: 'Bùi Thị Lan',
+    customerPhone: '0944556677',
+    identityCard: '001098556677',
+    requestedAmount: 40000000,
+    requestedTermMonths: 12,
+    loanPurpose: 'Vay tín chấp theo lương',
+    personalDetails: {
+      fullName: 'Bùi Thị Lan',
+      phone: '0944556677',
+      identityCard: '001098556677',
+      dob: '18/12/1990',
+      gender: 'Nữ',
+      address: '89 Kim Mã, Ba Đình, Hà Nội',
+      maritalStatus: 'Đã kết hôn',
+      educationLevel: 'Đại học'
+    },
+    financialDetails: {
+      grossMonthlyIncome: 30000000,
+      monthlyExpenses: 10000000,
+      employerName: 'Bệnh viện Đa khoa Quốc tế',
+      jobTitle: 'Điều dưỡng trưởng'
+    },
+    scoringResult: {
+      score: 790,
+      riskGrade: 'A',
+      riskLevel: 'Rủi ro Thấp'
+    },
+    status: 'APPROVED',
+    version: 1,
+    createdAt: '2026-09-26T14:20:00.000Z',
+    updatedAt: new Date().toISOString()
+  },
+  {
+    _id: 'LOS-2026-006',
+    applicationNo: 'LOS-2026-006',
+    customerId: 'u_customer_6',
+    customerName: 'Hoàng Minh Tuấn',
+    customerPhone: '0966778899',
+    identityCard: '001095667788',
+    requestedAmount: 150000000,
+    requestedTermMonths: 36,
+    loanPurpose: 'Vay hộ kinh doanh',
+    personalDetails: {
+      fullName: 'Hoàng Minh Tuấn',
+      phone: '0966778899',
+      identityCard: '001095667788',
+      dob: '22/07/1985',
+      gender: 'Nam',
+      address: '234 Trần Phú, Nha Trang, Khánh Hòa',
+      maritalStatus: 'Đã kết hôn',
+      educationLevel: 'Trung cấp'
+    },
+    financialDetails: {
+      grossMonthlyIncome: 25000000,
+      monthlyExpenses: 18000000,
+      employerName: 'Đại lý phân phối Tuấn Phát',
+      jobTitle: 'Chủ đại lý'
+    },
+    scoringResult: {
+      score: 490,
+      riskGrade: 'D',
+      riskLevel: 'Rủi ro Nghiêm Trọng'
+    },
+    status: 'REJECTED',
+    version: 1,
+    createdAt: '2026-09-26T11:10:00.000Z',
+    updatedAt: new Date().toISOString()
   }
 ];
 
@@ -383,7 +600,7 @@ class MemoryStore {
   // MongoDB Synchronization Engine
   async initMongoSync() {
     try {
-      const { User, LoanProduct, LoanApplication, ScoringRule, Notification, Comment } = require('../models');
+      const { User, Customer, LoanProduct, LoanApplication, LoanAuditLog, ScoringRule, Notification, Comment } = require('../models');
 
       // 1. Sync Loan Products
       const productCount = await LoanProduct.countDocuments();
@@ -399,13 +616,28 @@ class MemoryStore {
         }
       }
 
-      // 2. Sync Users
+      // 2. Sync Users & Customers
       const userCount = await User.countDocuments();
       if (userCount === 0) {
         for (const u of initialUsers) {
           await User.findOneAndUpdate({ email: u.email }, u, { upsert: true });
+          if (u.role === 'customer') {
+            await Customer.findOneAndUpdate(
+              { _id: u._id },
+              {
+                _id: u._id,
+                userId: u._id,
+                fullName: u.fullName,
+                phone: u.phone,
+                identityCard: u.identityCard,
+                occupation: u.occupation || 'OTHER',
+                personalDetails: { fullName: u.fullName }
+              },
+              { upsert: true }
+            );
+          }
         }
-        console.log('[Database] Seeded initial users into MongoDB.');
+        console.log('[Database] Seeded initial users & customers into MongoDB.');
       } else {
         const dbUsers = await User.find().lean();
         if (dbUsers.length > 0) {
@@ -425,13 +657,31 @@ class MemoryStore {
         }
       }
 
-      // 4. Sync Applications
+      // 4. Sync Applications & Seed Loan Audit Logs
       const appCount = await LoanApplication.countDocuments();
       if (appCount === 0) {
         for (const a of initialApplications) {
           await LoanApplication.findOneAndUpdate({ _id: a._id }, a, { upsert: true });
+          // Migrate/seed auditLogs into loan_audit_logs collection
+          if (Array.isArray(a.auditLogs)) {
+            for (const log of a.auditLogs) {
+              await LoanAuditLog.findOneAndUpdate(
+                { applicationId: a._id, timestamp: log.timestamp, action: log.action },
+                {
+                  applicationId: a._id,
+                  applicationNo: a.applicationNo,
+                  action: log.action,
+                  performedBy: log.performedBy,
+                  role: log.role || 'system',
+                  timestamp: log.timestamp,
+                  note: log.note || ''
+                },
+                { upsert: true }
+              );
+            }
+          }
         }
-        console.log('[Database] Seeded initial loan applications into MongoDB.');
+        console.log('[Database] Seeded initial loan applications & audit logs into MongoDB.');
       } else {
         const dbApps = await LoanApplication.find().sort({ createdAt: -1 }).lean();
         if (dbApps.length > 0) {
@@ -494,11 +744,25 @@ class MemoryStore {
     };
     this.users.push(newUser);
 
-    // Async persist to MongoDB
+    // Async persist to MongoDB (User and Customer)
     try {
-      const { User } = require('../models');
+      const { User, Customer } = require('../models');
       User.findOneAndUpdate({ _id: newUser._id }, newUser, { upsert: true })
         .catch(e => console.warn('[Mongo] User.create async error:', e.message));
+
+      if (newUser.role === 'customer') {
+        const customerDoc = {
+          _id: newUser._id,
+          userId: newUser._id,
+          fullName: newUser.fullName,
+          phone: newUser.phone || '',
+          identityCard: newUser.identityCard || '',
+          occupation: newUser.occupation || 'OTHER',
+          personalDetails: { fullName: newUser.fullName }
+        };
+        Customer.findOneAndUpdate({ _id: newUser._id }, customerDoc, { upsert: true })
+          .catch(e => console.warn('[Mongo] Customer.create async error:', e.message));
+      }
     } catch (e) {}
 
     return newUser;
@@ -509,9 +773,22 @@ class MemoryStore {
     if (user) {
       Object.assign(user, updateData);
       try {
-        const { User } = require('../models');
+        const { User, Customer } = require('../models');
         User.findOneAndUpdate({ _id: id }, updateData, { new: true })
           .catch(e => console.warn('[Mongo] User update error:', e.message));
+
+        if (user.role === 'customer') {
+          const customerUpdate = {
+            ...(updateData.fullName ? { fullName: updateData.fullName } : {}),
+            ...(updateData.phone ? { phone: updateData.phone } : {}),
+            ...(updateData.identityCard ? { identityCard: updateData.identityCard } : {}),
+            ...(updateData.occupation ? { occupation: updateData.occupation } : {}),
+            ...(updateData.personalDetails ? { personalDetails: updateData.personalDetails } : {}),
+            ...(updateData.financialDetails ? { financialDetails: updateData.financialDetails } : {})
+          };
+          Customer.findOneAndUpdate({ _id: id }, customerUpdate, { upsert: true })
+            .catch(e => console.warn('[Mongo] Customer update error:', e.message));
+        }
       } catch (e) {}
     }
     return user;
@@ -542,7 +819,15 @@ class MemoryStore {
   }
 
   getApplicationById(id) {
-    return this.applications.find(a => a._id === id || a.applicationNo === id);
+    if (!id) return null;
+    return this.applications.find(a => 
+      a._id === id || 
+      a.applicationNo === id ||
+      (a.applicationNo && a.applicationNo.replace('LOAN', 'LOS') === id) ||
+      (a.applicationNo && a.applicationNo.replace('LOS', 'LOAN') === id) ||
+      (a.applicationNo && a.applicationNo.toLowerCase() === id.toLowerCase()) ||
+      (a.identityCard && a.identityCard === id)
+    );
   }
 
   getApplicationsByCustomerId(customerId) {
@@ -577,11 +862,46 @@ class MemoryStore {
       delta: { updatedFields: newApp, removedFields: [] }
     });
 
-    // Async persist to MongoDB
+    // Async persist to MongoDB (LoanApplication, Customer, and LoanAuditLog)
     try {
-      const { LoanApplication } = require('../models');
+      const { LoanApplication, Customer, LoanAuditLog } = require('../models');
       LoanApplication.findOneAndUpdate({ _id: newApp._id }, newApp, { upsert: true })
         .catch(e => console.warn('[Mongo] LoanApplication.create async error:', e.message));
+
+      // Sync customer details to Customer collection if available
+      if (newApp.customerId) {
+        Customer.findOneAndUpdate(
+          { _id: newApp.customerId },
+          {
+            $set: {
+              ...(newApp.customerName ? { fullName: newApp.customerName } : {}),
+              ...(newApp.customerPhone ? { phone: newApp.customerPhone } : {}),
+              ...(newApp.identityCard ? { identityCard: newApp.identityCard } : {}),
+              ...(newApp.occupation ? { occupation: newApp.occupation } : {}),
+              ...(newApp.personalDetails ? { personalDetails: newApp.personalDetails } : {}),
+              ...(newApp.financialDetails ? { financialDetails: newApp.financialDetails } : {}),
+              ...(newApp.disbursementBank ? { defaultDisbursementBank: newApp.disbursementBank } : {}),
+              ...(newApp.disbursementAccount ? { defaultDisbursementAccount: newApp.disbursementAccount } : {})
+            }
+          },
+          { upsert: true }
+        ).catch(e => console.warn('[Mongo] Customer upsert error in createApplication:', e.message));
+      }
+
+      // Sync initial audit logs to loan_audit_logs collection
+      if (Array.isArray(newApp.auditLogs)) {
+        for (const log of newApp.auditLogs) {
+          LoanAuditLog.create({
+            applicationId: newApp._id,
+            applicationNo: newApp.applicationNo,
+            action: log.action || 'HO_SO_MOI',
+            performedBy: log.performedBy || newApp.customerName || 'System',
+            role: log.role || 'customer',
+            timestamp: log.timestamp || new Date().toISOString(),
+            note: log.note || ''
+          }).catch(e => console.warn('[Mongo] LoanAuditLog create error in createApplication:', e.message));
+        }
+      }
     } catch (e) {}
 
     return newApp;
@@ -684,16 +1004,27 @@ class MemoryStore {
   addAuditLog(appId, logEntry) {
     const app = this.getApplicationById(appId);
     if (!app) return null;
-    app.auditLogs.push({
+    const logItem = {
       timestamp: new Date().toISOString(),
       ...logEntry
-    });
+    };
+    app.auditLogs.push(logItem);
 
-    // Async persist to MongoDB
+    // Async persist to MongoDB (LoanApplication + LoanAuditLog)
     try {
-      const { LoanApplication } = require('../models');
+      const { LoanApplication, LoanAuditLog } = require('../models');
       LoanApplication.findOneAndUpdate({ _id: appId }, { auditLogs: app.auditLogs })
         .catch(e => console.warn('[Mongo] addAuditLog update error:', e.message));
+
+      LoanAuditLog.create({
+        applicationId: appId,
+        applicationNo: app.applicationNo,
+        action: logItem.action || 'THAY_DOI_HO_SO',
+        performedBy: logItem.performedBy || 'System',
+        role: logItem.role || 'system',
+        timestamp: logItem.timestamp,
+        note: logItem.note || ''
+      }).catch(e => console.warn('[Mongo] LoanAuditLog.create error:', e.message));
     } catch (e) {}
 
     return app;

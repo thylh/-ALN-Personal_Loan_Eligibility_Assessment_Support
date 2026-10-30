@@ -8,6 +8,7 @@ router.use(authenticateToken);
 router.use(authorizeRoles('credit_officer', 'admin'));
 
 router.get('/applications', adminController.getAllApplications);
+router.get('/applications/:id/customer-profile', adminController.getCustomerProfile360);
 router.put('/applications/:id/appraise', adminController.appraiseApplication);
 
 router.get('/scoring-rules', adminController.getScoringRules);

@@ -106,7 +106,7 @@ const loanApplicationSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'ACTION_REQUIRED', 'APPROVED', 'REJECTED', 'DISBURSED'],
+    enum: ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'ACTION_REQUIRED', 'APPROVED', 'REJECTED', 'DISBURSED', 'COMPLETED', 'SETTLED'],
     default: 'SUBMITTED'
   },
   version: {
@@ -130,7 +130,8 @@ const loanApplicationSchema = new mongoose.Schema({
   }]
 }, {
   timestamps: true,
-  _id: false
+  _id: false,
+  collection: 'loanapplications'
 });
 
 module.exports = mongoose.model('LoanApplication', loanApplicationSchema);

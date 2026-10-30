@@ -200,6 +200,13 @@ export const api = {
     return res.json();
   },
 
+  getCustomerProfile360: async (id) => {
+    const res = await fetch(`${API_BASE}/admin/applications/${id}/customer-profile`, {
+      headers: { ...getAuthHeaders() }
+    });
+    return res.json();
+  },
+
   // CDC State Reconciliation
   reconcileApplication: async (id, fromVersion = 0) => {
     const res = await fetch(`${API_BASE}/loans/application/${id}/reconcile?fromVersion=${fromVersion}`, {

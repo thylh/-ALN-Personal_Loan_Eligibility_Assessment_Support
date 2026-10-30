@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   FileText, Search, Filter, Clock, CheckCircle2, 
   AlertTriangle, XCircle, ArrowUpRight, Download, 
   UserCheck, Plus, RefreshCw, Eye, ChevronLeft, ChevronRight,
-  Radio, Sparkles
+  Radio, Sparkles, User
 } from 'lucide-react';
 import { useSocket } from '../../context/SocketContext';
 import { api } from '../../services/api';
+import CustomerProfile360Modal from '../../components/CustomerProfile360Modal';
 
 const INITIAL_LOS_APPLICATIONS = [
   {
@@ -109,12 +110,22 @@ const INITIAL_LOS_APPLICATIONS = [
 ];
 
 const LosList = () => {
+  const navigate = useNavigate();
   const { socket, connected } = useSocket();
   const [applications, setApplications] = useState(INITIAL_LOS_APPLICATIONS);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [gradeFilter, setGradeFilter] = useState('ALL');
   const [officerFilter, setOfficerFilter] = useState('ALL'); // 'ALL' or 'MINE'
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Customer Profile 360 State (Xem trực tiếp khi bấm vào tên KH)
+  const [selectedCustomerFor360, setSelectedCustomerFor360] = useState(null);
+  const [showCustomer360Modal, setShowCustomer360Modal] = useState(false);
+
+  const handleOpenCustomer360 = (item) => {
+    setSelectedCustomerFor360(item);
+    setShowCustomer360Modal(true);
+  };
 
   // Initial fetch from backend API
   useEffect(() => {
@@ -133,7 +144,7 @@ const LosList = () => {
           score: a.scoringResult?.score || 750,
           status: a.status,
           version: a.version || 1,
-          statusLabel: a.status === 'APPROVED' ? 'Đã phê duyệt' : a.status === 'REJECTED' ? 'Từ chối' : a.status === 'ACTION_REQUIRED' ? 'Cần bổ sung' : 'Chờ duyệt',
+          statusLabel: a.status === 'COMPLETED' || a.status === 'SETTLED' ? 'Đã tất toán' : a.status === 'APPROVED' ? 'Đã phê duyệt' : a.status === 'REJECTED' ? 'Từ chối' : a.status === 'ACTION_REQUIRED' ? 'Cần bổ sung' : 'Chờ duyệt',
           officer: 'Trần Thị Bình',
           createdAt: new Date(a.createdAt).toLocaleString('vi-VN'),
           slaMinutesLeft: 15
@@ -180,7 +191,7 @@ const LosList = () => {
             ...a,
             status: application.status,
             version: application.version || (a.version + 1),
-            statusLabel: application.status === 'APPROVED' ? 'Đã phê duyệt' : application.status === 'REJECTED' ? 'Từ chối' : application.status === 'ACTION_REQUIRED' ? 'Cần bổ sung' : 'Chờ duyệt'
+            statusLabel: application.status === 'COMPLETED' || application.status === 'SETTLED' ? 'Đã tất toán' : application.status === 'APPROVED' ? 'Đã phê duyệt' : application.status === 'REJECTED' ? 'Từ chối' : application.status === 'ACTION_REQUIRED' ? 'Cần bổ sung' : 'Chờ duyệt'
           };
         }
         return a;
@@ -286,6 +297,7 @@ const LosList = () => {
               <option value="IN_REVIEW">Đang thẩm định</option>
               <option value="ACTION_REQUIRED">Cần bổ sung chứng từ</option>
               <option value="APPROVED">Đã phê duyệt</option>
+              <option value="COMPLETED">Đã tất toán xong</option>
               <option value="REJECTED">Bị từ chối</option>
             </select>
           </div>
@@ -365,12 +377,26 @@ const LosList = () => {
                     </Link>
                   </td>
 
-                  {/* Customer Info */}
+                  {/* Customer Info - Thao tác trực tiếp vào tên để xem Hồ sơ 360 */}
                   <td className="py-3.5 px-4">
-                    <strong className="block text-slate-900 font-bold text-xs">{item.customerName}</strong>
-                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                      <span>{item.phone}</span> • <span>{item.idNumber}</span>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenCustomer360(item)}
+                      className="text-left group cursor-pointer transition focus:outline-none"
+                      title="Nhấn để xem Hồ sơ Khách hàng 360°, Lịch sử vay & Lịch sử nhắc nợ"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <strong className="block text-slate-900 group-hover:text-blue-600 group-hover:underline font-bold text-xs transition">
+                          {item.customerName}
+                        </strong>
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-blue-50 text-blue-600 border border-blue-200 group-hover:bg-blue-600 group-hover:text-white transition">
+                          360°
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono mt-0.5 group-hover:text-slate-600">
+                        <span>{item.phone}</span> • <span>{item.idNumber}</span>
+                      </div>
+                    </button>
                   </td>
 
                   {/* Loan Amount & Product */}
@@ -417,6 +443,11 @@ const LosList = () => {
                         Từ chối
                       </span>
                     )}
+                    {(item.status === 'COMPLETED' || item.status === 'SETTLED') && (
+                      <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full text-[10px] font-bold flex items-center gap-1 w-fit">
+                        ✓ Đã tất toán
+                      </span>
+                    )}
                   </td>
 
                   {/* Assignee */}
@@ -426,7 +457,9 @@ const LosList = () => {
 
                   {/* SLA Timer */}
                   <td className="py-3.5 px-4">
-                    {item.slaMinutesLeft > 0 ? (
+                    {item.status === 'COMPLETED' || item.status === 'SETTLED' ? (
+                      <span className="text-[10px] text-emerald-600 font-bold">Hoàn tất</span>
+                    ) : item.slaMinutesLeft > 0 ? (
                       <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
                         item.slaMinutesLeft < 20 
                           ? 'bg-red-100 text-red-700 animate-pulse' 
@@ -443,9 +476,9 @@ const LosList = () => {
                   <td className="py-3.5 px-4 text-right">
                     <Link
                       to={`/admin/los/${item.id}`}
-                      className="btn-primary py-1.5 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1 shadow-sm"
+                      className={`${(item.status === 'COMPLETED' || item.status === 'SETTLED') ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'btn-primary'} py-1.5 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1 shadow-sm transition`}
                     >
-                      Thẩm định
+                      {(item.status === 'COMPLETED' || item.status === 'SETTLED') ? 'Xem hồ sơ' : 'Thẩm định'}
                       <ArrowUpRight className="w-3.5 h-3.5" />
                     </Link>
                   </td>
@@ -468,6 +501,14 @@ const LosList = () => {
           </div>
         </div>
       </div>
+
+      {/* MODAL XEM HỒ SƠ KHÁCH HÀNG 360° TRỰC TIẾP TỪ LOS */}
+      <CustomerProfile360Modal
+        isOpen={showCustomer360Modal}
+        onClose={() => setShowCustomer360Modal(false)}
+        customerData={selectedCustomerFor360}
+        onNavigateToLoan={(loanId) => navigate(`/admin/los/${loanId}`)}
+      />
 
     </div>
   );

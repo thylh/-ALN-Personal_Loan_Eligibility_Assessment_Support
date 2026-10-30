@@ -271,12 +271,21 @@ const CustomerDashboard = () => {
 
                 {/* Primary Action Buttons */}
                 <div className="pt-2 flex flex-col sm:flex-row gap-3">
-                  <Link
-                    to="/payment"
-                    className="flex-1 btn-primary py-3.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-500/30 text-center"
-                  >
-                    <DollarSign className="w-4 h-4" /> Thanh toán trả nợ ngay (VietQR Real-Time)
-                  </Link>
+                  {remainingPrincipal > 0 ? (
+                    <Link
+                      to="/payment"
+                      className="flex-1 btn-primary py-3.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-500/30 text-center"
+                    >
+                      <DollarSign className="w-4 h-4" /> Thanh toán trả nợ ngay (VietQR Real-Time)
+                    </Link>
+                  ) : (
+                    <Link
+                      to="/payment"
+                      className="flex-1 py-3.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30 text-center transition"
+                    >
+                      <CheckCircle2 className="w-4 h-4" /> Khoản vay đã tất toán xong - Xem chi tiết
+                    </Link>
+                  )}
 
                   <button
                     type="button"

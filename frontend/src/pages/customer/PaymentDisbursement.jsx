@@ -159,14 +159,26 @@ const PaymentDisbursement = () => {
           <button
             type="button"
             onClick={() => { setActiveTab('repayment'); setPaymentSuccess(false); }}
-            className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl transition ${activeTab === 'repayment' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl transition ${activeTab === 'repayment' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
             Thanh toán trả nợ
           </button>
           <button
             type="button"
+            onClick={() => { setActiveTab('settled'); setPaymentSuccess(false); }}
+            className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 ${activeTab === 'settled' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            <span>Khoản vay đã thanh toán xong</span>
+            {loanOverview.completedLoans?.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-100 text-emerald-800 font-bold">
+                {loanOverview.completedLoans.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
             onClick={() => { setActiveTab('disbursement'); setPaymentSuccess(false); }}
-            className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl transition ${activeTab === 'disbursement' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl transition ${activeTab === 'disbursement' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
             Thông tin nhận giải ngân
           </button>
@@ -419,6 +431,120 @@ const PaymentDisbursement = () => {
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* TAB: SETTLED LOANS & REPAYMENT HISTORY */}
+      {activeTab === 'settled' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-xl p-6 sm:p-8 space-y-6">
+            <div className="flex justify-between items-start pb-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  Danh Sách Khoản Vay Đã Thanh Toán Xong (Tất Toán Hoàn Tất)
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Tổng hợp các hợp đồng tín dụng bạn đã thanh toán đủ 100% nợ gốc và lãi, dư nợ hiện tại về 0 VNĐ.
+                </p>
+              </div>
+              <Link
+                to="/history"
+                className="px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+              >
+                <span>Xem sao kê dòng tiền chi tiết</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+
+            {/* Settled Loans Cards */}
+            {loanOverview.completedLoans && loanOverview.completedLoans.length > 0 ? (
+              <div className="space-y-4">
+                {loanOverview.completedLoans.map((app) => (
+                  <div
+                    key={app._id}
+                    className="p-5 rounded-2xl border-2 border-emerald-100 bg-emerald-50/40 hover:bg-emerald-50/70 transition flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-slate-900 text-sm">
+                          {app.applicationNo}
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          ✓ Đã tất toán toàn bộ
+                        </span>
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-800">
+                        {app.productName || app.loanPurpose || 'Gói Vay Tiêu Dùng'}
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Kỳ hạn: <strong>{app.requestedTermMonths} tháng</strong> • Tài khoản nhận: <span className="font-mono">{app.disbursementAccount || 'N/A'}</span> ({app.disbursementBank || 'Vietcombank'})
+                      </p>
+                    </div>
+
+                    <div className="text-left sm:text-right space-y-0.5 border-t sm:border-t-0 pt-2 sm:pt-0 w-full sm:w-auto">
+                      <span className="text-[10px] text-slate-400 block uppercase font-bold">Số tiền đã vay & giải ngân</span>
+                      <span className="text-base font-black text-slate-900 block">
+                        {formatCurrency(app.approvedAmount || app.requestedAmount)}
+                      </span>
+                      <span className="text-xs font-bold text-emerald-600 block">
+                        Dư nợ còn lại: 0 VNĐ
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-8 text-center text-slate-400 space-y-3 bg-slate-50 rounded-2xl">
+                <CheckCircle2 className="w-12 h-12 mx-auto text-emerald-400/80" />
+                <h4 className="text-sm font-bold text-slate-700">Chưa có khoản vay nào được tất toán xong</h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Khi bạn hoàn tất thanh toán toàn bộ dư nợ của khoản vay hiện tại, thông tin và giấy xác nhận tất toán sẽ xuất hiện ở đây.
+                </p>
+              </div>
+            )}
+
+            {/* Payment Transactions History Sub-section */}
+            <div className="pt-6 border-t border-slate-100 space-y-4">
+              <div className="flex justify-between items-center">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                  Lịch sử các lần nộp tiền trả nợ gần nhất
+                </h4>
+                <span className="text-xs text-slate-400 font-mono">
+                  {loanOverview.transactions?.length || 0} giao dịch
+                </span>
+              </div>
+
+              {loanOverview.transactions && loanOverview.transactions.length > 0 ? (
+                <div className="divide-y divide-slate-100 rounded-2xl border border-slate-100 overflow-hidden">
+                  {loanOverview.transactions.slice(0, 5).map((t) => (
+                    <div key={t._id} className="p-4 bg-white flex justify-between items-center text-xs hover:bg-slate-50/80 transition">
+                      <div className="space-y-0.5">
+                        <span className="font-bold text-slate-800 block">
+                          {t.note || `Thanh toán khoản vay ${t.applicationNo}`}
+                        </span>
+                        <div className="text-[11px] text-slate-400 flex items-center gap-2">
+                          <span className="font-mono">{t.createdAt ? new Date(t.createdAt).toLocaleString('vi-VN') : '---'}</span>
+                          <span>•</span>
+                          <span>Mã GD: <strong className="font-mono text-slate-600">{t.transactionNo}</strong></span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-black text-blue-700 block">
+                          -{formatCurrency(t.amount)}
+                        </span>
+                        <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          Thành công ✓
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">Chưa có giao dịch thanh toán nào được ghi nhận.</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

@@ -560,8 +560,19 @@ const processRepayment = async (req, res) => {
         transaction,
         application: updatedApplication
       });
-      io.to('role:admin').emit('loan:payment_completed', {
+      io.to('role:admin').to('role:credit_officer').emit('loan:payment_completed', {
         transaction,
+        application: updatedApplication
+      });
+      // If loan completed or status changed, sync status
+      io.to(`loan:${app._id}`).to(`user:${customerId}`).emit('loan:status_updated', {
+        loanId: app._id,
+        applicationNo: app.applicationNo,
+        status: updatedApplication.status,
+        application: updatedApplication
+      });
+      io.to('role:credit_officer').to('role:admin').emit('loan:table_row_updated', {
+        loanId: app._id,
         application: updatedApplication
       });
     }
@@ -586,10 +597,12 @@ const getCustomerLoanOverview = async (req, res) => {
     const apps = memoryStore.getApplicationsByCustomerId(customerId);
     const transactions = memoryStore.getPaymentTransactionsByCustomerId(customerId);
 
-    // Active loan (DISBURSED or APPROVED)
-    const activeLoan = apps.find(a => a.status === 'DISBURSED' || a.status === 'APPROVED');
-    // Pending loan (SUBMITTED, UNDER_REVIEW, ACTION_REQUIRED)
+    // Active loan (DISBURSED or APPROVED, and not yet fully settled)
+    const activeLoan = apps.find(a => (a.status === 'DISBURSED' || a.status === 'APPROVED') && (a.remainingPrincipal === undefined || Number(a.remainingPrincipal) > 0));
+    // Pending loan awaiting review (SUBMITTED, UNDER_REVIEW, ACTION_REQUIRED) - exclude completed/settled loans
     const pendingLoan = apps.find(a => ['SUBMITTED', 'UNDER_REVIEW', 'ACTION_REQUIRED'].includes(a.status));
+    // Settled / Completed loans
+    const completedLoans = apps.filter(a => a.status === 'COMPLETED' || a.status === 'SETTLED' || (a.status === 'DISBURSED' && Number(a.remainingPrincipal) === 0));
 
     return res.json({
       success: true,
@@ -598,6 +611,7 @@ const getCustomerLoanOverview = async (req, res) => {
         activeLoan: activeLoan || null,
         hasPendingLoan: !!pendingLoan,
         pendingLoan: pendingLoan || null,
+        completedLoans,
         allApplications: apps,
         transactions
       }
