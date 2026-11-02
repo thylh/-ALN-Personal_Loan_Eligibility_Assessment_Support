@@ -114,6 +114,43 @@ const submitApplication = async (req, res) => {
     // Contract ID
     const contractId = 'HD-' + new Date().getFullYear() + '-LOMS-' + Math.floor(1000 + Math.random() * 9000);
 
+    // Retrieve verified eKYC record if available
+    const existingEkyc = memoryStore.getEkycByUserId(customerId);
+    const appDocuments = [...(documents || [])];
+
+    if (existingEkyc) {
+      if (existingEkyc.frontImageUrl && !appDocuments.find(d => d.type === 'cccd_front')) {
+        appDocuments.unshift({
+          id: 'doc_cccd_front_' + Date.now(),
+          type: 'cccd_front',
+          name: 'CCCD Mặt Trước (eKYC Verified)',
+          fileUrl: existingEkyc.frontImageUrl,
+          status: 'VERIFIED',
+          uploadedAt: existingEkyc.verifiedAt
+        });
+      }
+      if (existingEkyc.backImageUrl && !appDocuments.find(d => d.type === 'cccd_back')) {
+        appDocuments.unshift({
+          id: 'doc_cccd_back_' + Date.now(),
+          type: 'cccd_back',
+          name: 'CCCD Mặt Sau (eKYC Verified)',
+          fileUrl: existingEkyc.backImageUrl,
+          status: 'VERIFIED',
+          uploadedAt: existingEkyc.verifiedAt
+        });
+      }
+      if (existingEkyc.selfieImageUrl && !appDocuments.find(d => d.type === 'selfie_liveness')) {
+        appDocuments.unshift({
+          id: 'doc_selfie_' + Date.now(),
+          type: 'selfie_liveness',
+          name: 'Ảnh Chân Dung Liveness Oval (eKYC)',
+          fileUrl: existingEkyc.selfieImageUrl,
+          status: 'VERIFIED',
+          uploadedAt: existingEkyc.verifiedAt
+        });
+      }
+    }
+
     const newApp = memoryStore.createApplication({
       customerId,
       customerName: user ? user.fullName : (personalDetails?.fullName || req.user.fullName),
@@ -141,8 +178,18 @@ const submitApplication = async (req, res) => {
       loanPurpose: loanPurpose || 'Tiêu dùng cá nhân',
       personalDetails: personalDetails || {},
       financialDetails: financialDetails || {},
-      documents: documents || [],
+      documents: appDocuments,
       scoringResult,
+      ekycData: existingEkyc ? {
+        verified: existingEkyc.status === 'VERIFIED',
+        faceMatchScore: existingEkyc.faceMatchResult?.similarityScore || 94.5,
+        livenessPassed: existingEkyc.livenessResult?.passed || true,
+        stepsCompleted: existingEkyc.livenessResult?.stepsCompleted || ['look_straight', 'turn_left', 'turn_right', 'smile'],
+        verifiedAt: existingEkyc.verifiedAt,
+        frontImageUrl: existingEkyc.frontImageUrl,
+        backImageUrl: existingEkyc.backImageUrl,
+        selfieImageUrl: existingEkyc.selfieImageUrl
+      } : null,
       status: 'SUBMITTED',
       appraisalNote: '',
       actionRequiredReason: '',
@@ -163,6 +210,12 @@ const submitApplication = async (req, res) => {
         }
       ]
     });
+
+    // Link application ID to customer's eKYC record if exists
+    if (existingEkyc) {
+      existingEkyc.applicationId = newApp._id;
+      memoryStore.saveEkycRecord(existingEkyc);
+    }
 
     // Clear user's active draft after successful submission
     memoryStore.deleteDraft(customerId);

@@ -41,6 +41,30 @@ export const api = {
     return res.json();
   },
 
+  // eKYC Real Identity Verification (R1.2)
+  submitEkyc: async (ekycPayload) => {
+    const res = await fetch(`${API_BASE}/ekyc/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify(ekycPayload)
+    });
+    return res.json();
+  },
+
+  getMyEkyc: async () => {
+    const res = await fetch(`${API_BASE}/ekyc/my-status`, {
+      headers: { ...getAuthHeaders() }
+    });
+    return res.json();
+  },
+
+  getEkycByApplication: async (appId) => {
+    const res = await fetch(`${API_BASE}/ekyc/application/${encodeURIComponent(appId)}`, {
+      headers: { ...getAuthHeaders() }
+    });
+    return res.json();
+  },
+
   // Customer Loan APIs (UC2 & UC3)
   getLoanProducts: async (occupation) => {
     const url = occupation ? `${API_BASE}/loans/products?occupation=${encodeURIComponent(occupation)}` : `${API_BASE}/loans/products`;

@@ -580,6 +580,7 @@ class MemoryStore {
     this.drafts = {}; // customerId -> draft
     this.comments = []; // Realtime discussions between actors
     this.eventLogs = []; // Global event log for reconciliation & CDC fallback (eventId, documentId, version, envelope)
+    this.ekycRecords = []; // Real eKYC identity records with liveness and face match telemetry
   }
 
   // Loan Products (Segmentation & Recommendations)
@@ -1179,6 +1180,55 @@ class MemoryStore {
   getPaymentTransactionsByAppId(appId) {
     if (!this.paymentTransactions) this.paymentTransactions = [];
     return this.paymentTransactions.filter(t => t.applicationId === appId);
+  }
+
+  // eKYC Identity Telemetry and Verification Store
+  saveEkycRecord(record) {
+    if (!this.ekycRecords) this.ekycRecords = [];
+    const index = this.ekycRecords.findIndex(r => r.userId === record.userId);
+    const fullRecord = {
+      _id: record._id || 'ekyc_' + Date.now(),
+      ...record,
+      updatedAt: new Date().toISOString()
+    };
+    if (index >= 0) {
+      this.ekycRecords[index] = { ...this.ekycRecords[index], ...fullRecord };
+    } else {
+      this.ekycRecords.push(fullRecord);
+    }
+
+    // Async write-through to MongoDB if connected
+    try {
+      const { EkycRecord } = require('../models');
+      if (EkycRecord) {
+        EkycRecord.findOneAndUpdate(
+          { userId: fullRecord.userId },
+          fullRecord,
+          { upsert: true, new: true }
+        ).catch(err => console.warn('[Mongo] eKYC record persistence error:', err.message));
+      }
+    } catch (e) {}
+
+    return fullRecord;
+  }
+
+  getEkycByUserId(userId) {
+    if (!this.ekycRecords) this.ekycRecords = [];
+    return this.ekycRecords.find(r => r.userId === userId) || null;
+  }
+
+  getEkycByAppId(appId) {
+    if (!this.ekycRecords) this.ekycRecords = [];
+    // First try exact application ID match
+    let found = this.ekycRecords.find(r => r.applicationId === appId);
+    if (!found) {
+      // Look up application to get customerId
+      const app = this.getApplicationById(appId);
+      if (app && app.customerId) {
+        found = this.ekycRecords.find(r => r.userId === app.customerId);
+      }
+    }
+    return found || null;
   }
 }
 

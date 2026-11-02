@@ -14,6 +14,7 @@ const { initSocket } = require('./realtime/socketManager');
 const authRoutes = require('./routes/authRoutes');
 const loanRoutes = require('./routes/loanRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const ekycRoutes = require('./routes/ekycRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -58,6 +59,7 @@ connectDB();
 app.use('/api/auth', authRoutes);
 app.use('/api/loans', loanRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/ekyc', ekycRoutes);
 
 // Healthcheck Route
 app.get('/api/health', (req, res) => {
