@@ -1,35 +1,51 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
 /**
- * Custom hook quản lý Webcam / Camera thiết bị
- * Hỗ trợ chuyển đổi camera trước/sau, chụp ảnh tức thì qua canvas
+ * Custom hook quản lý Webcam / Camera thiết bị tối ưu hóa không bị re-render loop
+ * - Sử dụng streamRef (useRef) thay vì useState để giữ MediaStream
+ * - Bắt buộc cleanup track.stop() khi unmount
+ * - Cung cấp hàm khởi tạo chuẩn, autoPlay, playsInline, muted
  */
 export function useCamera(initialFacingMode = 'user') {
-  const [stream, setStream] = useState(null);
   const [isActive, setIsActive] = useState(false);
   const [error, setError] = useState(null);
   const [facingMode, setFacingMode] = useState(initialFacingMode);
   const [hasPermission, setHasPermission] = useState(null);
 
   const videoRef = useRef(null);
+  // A. Biến tham chiếu streamRef: Giữ đối tượng MediaStream bằng useRef ngăn chặn re-render loop
+  const streamRef = useRef(null);
 
+  // Hàm dừng và dọn dẹp phần cứng (cleanup)
   const stopCamera = useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach(track => {
-        try {
-          track.stop();
-        } catch (e) {}
-      });
-      setStream(null);
+    if (streamRef.current) {
+      try {
+        const tracks = streamRef.current.getTracks();
+        tracks.forEach(track => {
+          try {
+            track.stop();
+          } catch (e) {}
+        });
+      } catch (e) {}
+      streamRef.current = null;
     }
+
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
     setIsActive(false);
-  }, [stream]);
+  }, []);
 
+  // B. Hàm khởi tạo camera (initializeCamera)
   const startCamera = useCallback(async (mode = facingMode) => {
-    stopCamera();
+    // Dọn dẹp luồng cũ trước khi mở luồng mới
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => {
+        try { t.stop(); } catch (e) {}
+      });
+      streamRef.current = null;
+    }
+
     setError(null);
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -49,14 +65,24 @@ export function useCamera(initialFacingMode = 'user') {
       };
 
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      setStream(mediaStream);
+      streamRef.current = mediaStream;
       setHasPermission(true);
       setIsActive(true);
       setFacingMode(mode);
 
+      // C. Gắn kết hiển thị giao diện vào thẻ video
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
-        await videoRef.current.play().catch(e => console.warn('Video auto-play warning:', e));
+        // Đảm bảo các thuộc tính phát mượt mà
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.setAttribute('autoplay', 'true');
+        videoRef.current.muted = true;
+        
+        try {
+          await videoRef.current.play();
+        } catch (e) {
+          console.warn('Video auto-play warning:', e);
+        }
       }
 
       return true;
@@ -75,14 +101,15 @@ export function useCamera(initialFacingMode = 'user') {
       setIsActive(false);
       return false;
     }
-  }, [facingMode, stopCamera]);
+  }, [facingMode]);
 
   const switchCamera = useCallback(async () => {
     const nextMode = facingMode === 'user' ? 'environment' : 'user';
     return await startCamera(nextMode);
   }, [facingMode, startCamera]);
 
-  const captureSnapshot = useCallback((options = { quality: 0.92, mimeType: 'image/jpeg' }) => {
+  // Chụp ảnh tức thì qua canvas
+  const captureSnapshot = useCallback((options = { quality: 0.95, mimeType: 'image/jpeg' }) => {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) {
       return null;
@@ -93,34 +120,38 @@ export function useCamera(initialFacingMode = 'user') {
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
 
-    // If front camera, flip horizontally for mirror preview match
+    // Nếu là camera trước, lật ngang để khớp với gương preview
     if (facingMode === 'user') {
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
     }
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL(options.mimeType, options.quality);
-    return dataUrl;
+    return canvas.toDataURL(options.mimeType || 'image/jpeg', options.quality || 0.95);
   }, [facingMode]);
 
+  // Tự động dọn dẹp phần cứng khi component unmount
   useEffect(() => {
     return () => {
-      stopCamera();
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => {
+          try { track.stop(); } catch (e) {}
+        });
+        streamRef.current = null;
+      }
     };
-  }, [stopCamera]);
+  }, []);
 
   return {
     videoRef,
-    stream,
+    streamRef,
     isActive,
     error,
-    hasPermission,
     facingMode,
+    hasPermission,
     startCamera,
     stopCamera,
     switchCamera,
     captureSnapshot
   };
 }
-

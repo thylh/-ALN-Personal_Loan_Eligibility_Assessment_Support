@@ -69,6 +69,14 @@ const initSocket = (httpServer) => {
       });
     });
 
+    // 1.1 Join Payment Session Room (QR Mobile Pay Realtime Sync)
+    socket.on('payment:join_session', ({ sessionId }) => {
+      if (!sessionId) return;
+      const room = `session:${sessionId}`;
+      socket.join(room);
+      console.log(`[Socket Room] Socket ${socket.id} joined payment session room: ${room}`);
+    });
+
     // 2. Leave Application Room
     socket.on('loan:leave_room', ({ loanId }) => {
       if (!loanId) return;

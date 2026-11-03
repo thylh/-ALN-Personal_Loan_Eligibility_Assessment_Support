@@ -19,6 +19,7 @@ import NotificationCenter from './pages/customer/NotificationCenter';
 import SupportHelp from './pages/customer/SupportHelp';
 import Referral from './pages/customer/Referral';
 import LoanProductDetail from './pages/customer/LoanProductDetail';
+import MobilePaymentPage from './pages/customer/MobilePaymentPage';
 
 // ADMIN PAGES
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -73,6 +74,7 @@ export default function App() {
               <Route path="/login" element={<LoginRegister />} />
               <Route path="/support" element={<SupportHelp />} />
               <Route path="/referral" element={<Referral />} />
+              <Route path="/mobile-pay" element={<MobilePaymentPage />} />
 
               {/* CUSTOMER PORTAL ROUTES */}
               <Route path="/apply/ekyc" element={

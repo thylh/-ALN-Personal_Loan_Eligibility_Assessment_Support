@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
 const { authenticateToken, authorizeRoles } = require('../middleware/authMiddleware');
+const { validateLoanStateGuard } = require('../middleware/loanStateGuard');
 
 // All admin routes require authentication and role check
 router.use(authenticateToken);
@@ -9,7 +10,7 @@ router.use(authorizeRoles('credit_officer', 'admin'));
 
 router.get('/applications', adminController.getAllApplications);
 router.get('/applications/:id/customer-profile', adminController.getCustomerProfile360);
-router.put('/applications/:id/appraise', adminController.appraiseApplication);
+router.put('/applications/:id/appraise', validateLoanStateGuard, adminController.appraiseApplication);
 
 router.get('/scoring-rules', adminController.getScoringRules);
 router.put('/scoring-rules', authorizeRoles('admin'), adminController.updateScoringRules);

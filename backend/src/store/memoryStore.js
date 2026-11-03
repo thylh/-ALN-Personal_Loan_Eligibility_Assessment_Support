@@ -581,6 +581,69 @@ class MemoryStore {
     this.comments = []; // Realtime discussions between actors
     this.eventLogs = []; // Global event log for reconciliation & CDC fallback (eventId, documentId, version, envelope)
     this.ekycRecords = []; // Real eKYC identity records with liveness and face match telemetry
+    this.archivedLoans = []; // Bảng lịch sử lưu trữ (ArchiveCollection) khi vượt 100 bản ghi (10 trang)
+  }
+
+  // Hàm dọn dẹp / lưu trữ tự động bản ghi cũ (archiveOldLoanRecords):
+  // Duy trì cửa sổ trượt tối đa 100 khoản vay (10 trang x 10 bản ghi). Các khoản vay cũ nhất vượt ngưỡng sẽ được chuyển sang Archive.
+  archiveOldLoanRecords(maxRecords = 100) {
+    if (this.applications.length <= maxRecords) {
+      return { archivedCount: 0, currentActiveCount: this.applications.length };
+    }
+
+    const excessCount = this.applications.length - maxRecords;
+    // Sắp xếp các hồ sơ theo thời gian tạo tăng dần (cũ nhất đứng trước)
+    // Ưu tiên chuyển các hồ sơ đã SETTLED, COMPLETED, REJECTED vào archive trước
+    const sortedApps = [...this.applications].sort((a, b) => {
+      const isAClosed = ['SETTLED', 'COMPLETED', 'REJECTED'].includes(a.status);
+      const isBClosed = ['SETTLED', 'COMPLETED', 'REJECTED'].includes(b.status);
+      if (isAClosed && !isBClosed) return -1;
+      if (!isAClosed && isBClosed) return 1;
+      return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+    });
+
+    const toArchive = sortedApps.slice(0, excessCount);
+    const archiveIds = new Set(toArchive.map(a => a._id));
+
+    // Thêm vào danh sách archivedLoans
+    const archivedPayloads = toArchive.map(app => ({
+      _id: app._id,
+      applicationNo: app.applicationNo,
+      customerId: app.customerId,
+      customerName: app.customerName,
+      customerPhone: app.customerPhone,
+      identityCard: app.identityCard,
+      requestedAmount: app.requestedAmount,
+      requestedTermMonths: app.requestedTermMonths,
+      status: app.status,
+      scoringResult: app.scoringResult,
+      originalCreatedAt: app.createdAt,
+      archivedAt: new Date().toISOString(),
+      archivedReason: 'Exceeded active queue sliding window (max 100 loans / 10 pages)',
+      fullDataSnapshot: app
+    }));
+
+    this.archivedLoans.push(...archivedPayloads);
+
+    // Cắt bỏ khỏi active queue
+    this.applications = this.applications.filter(a => !archiveIds.has(a._id));
+
+    console.log(`[Sliding Window Archive] Đã tự động lưu trữ ${excessCount} khoản vay cũ vào ArchiveCollection. Active Queue còn lại: ${this.applications.length} hồ sơ.`);
+
+    // Đồng bộ vào MongoDB nếu có kết nối
+    try {
+      const { ArchivedLoan, LoanApplication } = require('../models');
+      if (ArchivedLoan && LoanApplication) {
+        ArchivedLoan.insertMany(archivedPayloads, { ordered: false }).catch(() => {});
+        LoanApplication.deleteMany({ _id: { $in: Array.from(archiveIds) } }).catch(() => {});
+      }
+    } catch (e) {}
+
+    return {
+      archivedCount: excessCount,
+      currentActiveCount: this.applications.length,
+      totalArchived: this.archivedLoans.length
+    };
   }
 
   // Loan Products (Segmentation & Recommendations)
@@ -852,6 +915,9 @@ class MemoryStore {
       updatedAt: new Date().toISOString()
     };
     this.applications.unshift(newApp);
+
+    // Tự động kiểm tra và dọn dẹp hàng đợi active để không vượt quá 10 trang (100 bản ghi)
+    this.archiveOldLoanRecords(100);
 
     // Record Event in event log
     this.recordEventLog({

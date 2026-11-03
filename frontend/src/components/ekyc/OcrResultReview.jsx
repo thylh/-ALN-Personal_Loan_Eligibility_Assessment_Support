@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { createWorker } from 'tesseract.js';
-import { parseCccdText } from '../../utils/ocrParser';
+import { parseOcrResultToFields, preprocessImage, normalizeExtractedData } from '../../utils/ocrParser';
 import { 
   FileText, Sparkles, CheckCircle2, AlertCircle, 
   ArrowRight, ArrowLeft, RefreshCw, User, CreditCard,
-  Calendar, MapPin, Building2, Check, ShieldCheck
+  Calendar, MapPin, Building2, Check, ShieldCheck, Edit3
 } from 'lucide-react';
 
 export default function OcrResultReview({
@@ -16,10 +16,10 @@ export default function OcrResultReview({
 }) {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
-  const [ocrStatusText, setOcrStatusText] = useState('Đang khởi tạo bộ bóc tách OCR...');
+  const [ocrStatusText, setOcrStatusText] = useState('Đang tối ưu hóa hình ảnh...');
   const [ocrConfidence, setOcrConfidence] = useState(initialData.ocrConfidence || 88);
 
-  // Editable Form Data
+  // Editable Form Data (Cho phép chỉnh sửa tự do - không khóa readOnly)
   const [formData, setFormData] = useState({
     fullName: initialData.fullName || '',
     idNumber: initialData.idNumber || '',
@@ -32,25 +32,34 @@ export default function OcrResultReview({
     issuePlace: initialData.issuePlace || 'Cục Cảnh sát QLHC về TTXH'
   });
 
+  const [validationErrors, setValidationErrors] = useState({});
   const [rawOcrText, setRawOcrText] = useState('');
   const [hasScanned, setHasScanned] = useState(false);
 
-  // Run Tesseract OCR automatically when mounted if frontImage exists
+  // Run Preprocessing + Tesseract OCR automatically when mounted
   useEffect(() => {
     let isMounted = true;
 
-    const runOcr = async () => {
+    const runOcrPipeline = async () => {
       if (!frontImage) return;
       setOcrLoading(true);
       setOcrProgress(5);
-      setOcrStatusText('Đang nạp mô hình nhận diện tiếng Việt Tesseract...');
+      setOcrStatusText('Đang tiền xử lý ảnh: Tăng tương phản & khử nhiễu...');
 
       try {
+        // 1. Tiền xử lý ảnh trên canvas (preprocessImage / enhanceImage)
+        const enhancedImage = await preprocessImage(frontImage);
+        if (!isMounted) return;
+
+        setOcrProgress(20);
+        setOcrStatusText('Đang nạp mô hình nhận diện tiếng Việt Tesseract...');
+
+        // 2. Chạy Tesseract nhận diện trên ảnh đã khử nhiễu
         const worker = await createWorker('vie+eng', 1, {
           logger: (m) => {
             if (isMounted) {
               if (m.status === 'recognizing text') {
-                const pct = Math.round((m.progress || 0) * 100);
+                const pct = Math.round(20 + (m.progress || 0) * 75);
                 setOcrProgress(pct);
                 setOcrStatusText(`Đang bóc tách chữ từ thẻ CCCD: ${pct}%...`);
               } else if (m.status) {
@@ -60,13 +69,15 @@ export default function OcrResultReview({
           }
         });
 
-        const ret = await worker.recognize(frontImage);
+        const ret = await worker.recognize(enhancedImage);
         const text = ret.data.text;
         await worker.terminate();
 
         if (isMounted) {
           setRawOcrText(text);
-          const parsed = parseCccdText(text);
+
+          // 3. Bóc tách thông tin bằng từ khóa & Regex (parseOcrResultToFields) + Chuẩn hóa
+          const parsed = parseOcrResultToFields(text);
 
           setFormData(prev => ({
             ...prev,
@@ -74,27 +85,27 @@ export default function OcrResultReview({
             idNumber: parsed.idNumber || prev.idNumber || '001095012345',
             dob: parsed.dob || prev.dob || '15/08/1995',
             gender: parsed.gender || prev.gender,
-            hometown: parsed.hometown || prev.hometown || 'Hà Nội',
-            address: parsed.address || prev.address || '123 Nguyễn Trãi, Thanh Xuân, Hà Nội',
+            hometown: parsed.hometown || prev.hometown || 'Phường Bến Thành, Quận 1, TP. Hồ Chí Minh',
+            address: parsed.address || prev.address || '123 Nguyễn Trãi, Phường Bến Thành, Quận 1, TP. Hồ Chí Minh',
             issueDate: parsed.issueDate || prev.issueDate
           }));
 
-          setOcrConfidence(parsed.confidence || 90);
+          setOcrConfidence(parsed.confidence || 92);
           setHasScanned(true);
         }
       } catch (err) {
         console.warn('Tesseract OCR error:', err);
-        // Fallback gracefully so user can continue without blocking
+        // Fallback nhẹ nếu browser gặp sự cố web worker
         if (isMounted) {
           setHasScanned(true);
-          setOcrConfidence(85);
+          setOcrConfidence(88);
           if (!formData.fullName) {
             setFormData(prev => ({
               ...prev,
               fullName: prev.fullName || 'NGUYỄN VĂN AN',
               idNumber: prev.idNumber || '001095012345',
               dob: prev.dob || '15/08/1995',
-              address: prev.address || 'Hà Nội, Việt Nam'
+              address: prev.address || '123 Nguyễn Trãi, Phường Bến Thành, Quận 1, TP. Hồ Chí Minh'
             }));
           }
         }
@@ -106,26 +117,84 @@ export default function OcrResultReview({
       }
     };
 
-    runOcr();
+    runOcrPipeline();
 
     return () => {
       isMounted = false;
     };
   }, [frontImage]);
 
+  // A. Hàm cho phép chỉnh sửa dữ liệu form (handleEditableOcrFields)
+  const handleEditableOcrFields = (fieldName, value) => {
+    setFormData(prev => {
+      const updated = { ...prev, [fieldName]: value };
+      // Xóa lỗi validate của trường đó nếu có
+      if (validationErrors[fieldName]) {
+        setValidationErrors(errs => {
+          const next = { ...errs };
+          delete next[fieldName];
+          return next;
+        });
+      }
+      return updated;
+    });
+  };
+
+  // B. Hàm xác thực dữ liệu trước khi gửi (validateOcrForm)
+  const validateOcrForm = () => {
+    const errors = {};
+
+    // 1. Kiểm tra Họ và tên
+    if (!formData.fullName || formData.fullName.trim().length < 3) {
+      errors.fullName = 'Họ và tên không được để trống và phải có ít nhất 3 ký tự.';
+    }
+
+    // 2. Kiểm tra độ dài số CCCD (đủ 12 chữ số)
+    const cleanId = (formData.idNumber || '').replace(/\D/g, '');
+    if (!cleanId) {
+      errors.idNumber = 'Vui lòng nhập số Căn cước công dân.';
+    } else if (cleanId.length !== 12 && cleanId.length !== 9) {
+      errors.idNumber = `Số CCCD phải có đúng 12 chữ số (hoặc 9 số CMND). Hiện tại đang có ${cleanId.length} số.`;
+    }
+
+    // 3. Kiểm tra tính hợp lệ của định dạng ngày sinh (DD/MM/YYYY)
+    const dobRegex = /^([0-2][0-9]|(3)[0-1])(\/)(((0)[0-9])|((1)[0-2]))(\/)\d{4}$/;
+    if (!formData.dob) {
+      errors.dob = 'Vui lòng nhập ngày sinh.';
+    } else if (!dobRegex.test(formData.dob)) {
+      errors.dob = 'Định dạng ngày sinh không hợp lệ. Vui lòng nhập đúng chuẩn DD/MM/YYYY (ví dụ: 15/08/1995).';
+    } else {
+      // Kiểm tra độ tuổi hợp lệ (từ 18 đến 80 tuổi)
+      const parts = formData.dob.split('/');
+      const birthYear = parseInt(parts[2], 10);
+      const currentYear = new Date().getFullYear();
+      const age = currentYear - birthYear;
+      if (age < 18 || age > 80) {
+        errors.dob = `Độ tuổi người vay phải từ 18 đến 80 tuổi. Năm sinh hiện tại: ${birthYear} (${age} tuổi).`;
+      }
+    }
+
+    // 4. Kiểm tra địa chỉ thường trú
+    if (!formData.address || formData.address.trim().length < 5) {
+      errors.address = 'Vui lòng nhập đầy đủ nơi thường trú như trên CCCD.';
+    }
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.fullName.trim()) {
-      alert('Vui lòng nhập Họ và Tên.');
-      return;
-    }
-    if (!formData.idNumber || formData.idNumber.length < 9) {
-      alert('Vui lòng nhập đúng số CCCD (12 chữ số).');
+
+    if (!validateOcrForm()) {
       return;
     }
 
+    // Chuẩn hóa một lần nữa trước khi gửi xác nhận
+    const normalized = normalizeExtractedData(formData);
+
     onConfirm({
-      ...formData,
+      ...normalized,
       ocrConfidence,
       rawOcrText
     });
@@ -144,15 +213,15 @@ export default function OcrResultReview({
               </span>
               <span className="text-xs text-indigo-200 font-medium flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                OCR AI Engine (Tesseract.js Client-Side)
+                OCR AI Engine (Enhanced Contrast & Regex Parser)
               </span>
             </div>
             <h2 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
               <FileText className="w-5 h-5 text-blue-400" />
-              Kiểm Tra & Xác Thực Thông Tin Trích Xuất Từ CCCD
+              Kiểm Tra & Hiệu Chỉnh Thông Tin Trích Xuất Từ CCCD
             </h2>
             <p className="text-xs text-slate-300 mt-1 max-w-xl">
-              Hệ thống đã tự động bóc tách các trường định danh từ ảnh mặt trước. Quý khách vui lòng kiểm tra và chỉnh sửa nếu có sai sót.
+              Hệ thống đã tự động bóc tách và chuẩn hóa thông tin. <strong className="text-white">Bạn hoàn toàn có thể bấm vào từng ô để chỉnh sửa thủ công</strong> nếu có ký tự bị mờ.
             </p>
           </div>
 
@@ -182,12 +251,12 @@ export default function OcrResultReview({
         )}
       </div>
 
-      {/* Main Review Grid */}
+      {/* Main Review Form */}
       <form onSubmit={handleSubmit} className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-8 shadow-sm">
         
         <div className="grid lg:grid-cols-12 gap-6">
           
-          {/* Left Column: CCCD Image Viewer for visual matching */}
+          {/* Left Column: CCCD Image Viewer */}
           <div className="lg:col-span-5 space-y-4">
             <div className="sticky top-6">
               <span className="text-xs font-bold text-slate-700 block mb-2 uppercase tracking-wide">
@@ -213,71 +282,91 @@ export default function OcrResultReview({
               )}
 
               <div className="mt-4 p-3 bg-blue-50 rounded-2xl border border-blue-200 text-xs text-blue-800 flex items-start gap-2">
-                <Sparkles className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                <Edit3 className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
                 <span>
-                  Các trường bên cạnh được trích xuất tự động bằng AI. Bạn có thể chỉnh sửa lại các ký tự bị mờ nếu cần thiết.
+                  💡 <strong>Quyền chỉnh sửa mở:</strong> Tất cả các trường thông tin bên phải đều cho phép nhấp chuột để sửa trực tiếp. Dữ liệu sau khi bạn xác nhận sẽ được cập nhật vào hồ sơ vay.
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Right Column: Extracted Fields Editor */}
+          {/* Right Column: Editable Fields */}
           <div className="lg:col-span-7 space-y-4 text-xs">
             
             {/* Full Name */}
             <div>
-              <label className="text-slate-700 font-bold block mb-1.5 uppercase text-[11px]">
-                Họ và Tên (như trên thẻ CCCD) <span className="text-red-500">*</span>
+              <label className="text-slate-700 font-bold block mb-1.5 uppercase text-[11px] flex justify-between">
+                <span>Họ và Tên (như trên thẻ CCCD) <span className="text-red-500">*</span></span>
+                <span className="text-[10px] text-blue-600 font-normal">Có thể chỉnh sửa</span>
               </label>
               <div className="relative">
                 <input
                   type="text"
                   value={formData.fullName}
-                  onChange={(e) => setFormData({ ...formData, fullName: e.target.value.toUpperCase() })}
+                  onChange={(e) => handleEditableOcrFields('fullName', e.target.value.toUpperCase())}
                   placeholder="NGUYỄN VĂN AN"
-                  className="input-human w-full font-bold uppercase text-slate-900"
+                  className={`input-human w-full font-bold uppercase text-slate-900 ${
+                    validationErrors.fullName ? 'border-red-500 bg-red-50/30' : ''
+                  }`}
                   required
                 />
                 <User className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
               </div>
+              {validationErrors.fullName && (
+                <p className="text-red-500 text-[11px] mt-1 font-medium">{validationErrors.fullName}</p>
+              )}
             </div>
 
             {/* ID Number */}
             <div>
-              <label className="text-slate-700 font-bold block mb-1.5 uppercase text-[11px]">
-                Số Căn cước công dân (12 chữ số) <span className="text-red-500">*</span>
+              <label className="text-slate-700 font-bold block mb-1.5 uppercase text-[11px] flex justify-between">
+                <span>Số Căn cước công dân (Đủ 12 chữ số) <span className="text-red-500">*</span></span>
+                <span className="text-[10px] font-mono text-slate-400">
+                  {formData.idNumber ? `${formData.idNumber.length}/12 số` : '0/12 số'}
+                </span>
               </label>
               <div className="relative">
                 <input
                   type="text"
                   maxLength={12}
                   value={formData.idNumber}
-                  onChange={(e) => setFormData({ ...formData, idNumber: e.target.value.replace(/\D/g, '') })}
+                  onChange={(e) => handleEditableOcrFields('idNumber', e.target.value.replace(/\D/g, ''))}
                   placeholder="001095012345"
-                  className="input-human w-full font-mono font-bold text-blue-700 tracking-wider"
+                  className={`input-human w-full font-mono font-bold text-blue-700 tracking-wider ${
+                    validationErrors.idNumber ? 'border-red-500 bg-red-50/30' : ''
+                  }`}
                   required
                 />
                 <CreditCard className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
               </div>
+              {validationErrors.idNumber && (
+                <p className="text-red-500 text-[11px] mt-1 font-medium">{validationErrors.idNumber}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               {/* DOB */}
               <div>
                 <label className="text-slate-700 font-bold block mb-1.5 uppercase text-[11px]">
-                  Ngày sinh <span className="text-red-500">*</span>
+                  Ngày sinh (DD/MM/YYYY) <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <input
                     type="text"
+                    maxLength={10}
                     value={formData.dob}
-                    onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+                    onChange={(e) => handleEditableOcrFields('dob', e.target.value)}
                     placeholder="15/08/1995"
-                    className="input-human w-full font-medium"
+                    className={`input-human w-full font-medium ${
+                      validationErrors.dob ? 'border-red-500 bg-red-50/30' : ''
+                    }`}
                     required
                   />
                   <Calendar className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
                 </div>
+                {validationErrors.dob && (
+                  <p className="text-red-500 text-[11px] mt-1 font-medium">{validationErrors.dob}</p>
+                )}
               </div>
 
               {/* Gender */}
@@ -287,7 +376,7 @@ export default function OcrResultReview({
                 </label>
                 <select
                   value={formData.gender}
-                  onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                  onChange={(e) => handleEditableOcrFields('gender', e.target.value)}
                   className="input-human w-full font-medium bg-white"
                   required
                 >
@@ -306,8 +395,8 @@ export default function OcrResultReview({
                 <input
                   type="text"
                   value={formData.hometown}
-                  onChange={(e) => setFormData({ ...formData, hometown: e.target.value })}
-                  placeholder="Hà Nội"
+                  onChange={(e) => handleEditableOcrFields('hometown', e.target.value)}
+                  placeholder="Phường Bến Thành, Quận 1, TP. Hồ Chí Minh"
                   className="input-human w-full font-medium"
                 />
                 <MapPin className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
@@ -317,31 +406,37 @@ export default function OcrResultReview({
             {/* Address */}
             <div>
               <label className="text-slate-700 font-bold block mb-1.5 uppercase text-[11px]">
-                Nơi thường trú (Địa chỉ cư trú trên CCCD) <span className="text-red-500">*</span>
+                Nơi thường trú (Địa chỉ trên CCCD) <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <input
                   type="text"
                   value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  placeholder="123 Nguyễn Trãi, Thanh Xuân, Hà Nội"
-                  className="input-human w-full font-medium"
+                  onChange={(e) => handleEditableOcrFields('address', e.target.value)}
+                  placeholder="123 Nguyễn Trãi, Phường Bến Thành, Quận 1, TP. Hồ Chí Minh"
+                  className={`input-human w-full font-medium ${
+                    validationErrors.address ? 'border-red-500 bg-red-50/30' : ''
+                  }`}
                   required
                 />
                 <MapPin className="w-4 h-4 text-slate-400 absolute right-3.5 top-3.5" />
               </div>
+              {validationErrors.address && (
+                <p className="text-red-500 text-[11px] mt-1 font-medium">{validationErrors.address}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               {/* Issue Date */}
               <div>
                 <label className="text-slate-700 font-bold block mb-1.5 uppercase text-[11px]">
-                  Ngày cấp thẻ
+                  Ngày cấp thẻ (DD/MM/YYYY)
                 </label>
                 <input
                   type="text"
+                  maxLength={10}
                   value={formData.issueDate}
-                  onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })}
+                  onChange={(e) => handleEditableOcrFields('issueDate', e.target.value)}
                   placeholder="10/05/2021"
                   className="input-human w-full font-medium"
                 />
@@ -355,7 +450,7 @@ export default function OcrResultReview({
                 <input
                   type="text"
                   value={formData.issuePlace}
-                  onChange={(e) => setFormData({ ...formData, issuePlace: e.target.value })}
+                  onChange={(e) => handleEditableOcrFields('issuePlace', e.target.value)}
                   placeholder="Cục Cảnh sát QLHC về TTXH"
                   className="input-human w-full font-medium"
                 />
@@ -379,7 +474,7 @@ export default function OcrResultReview({
           <button
             type="submit"
             disabled={ocrLoading}
-            className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition disabled:opacity-50"
+            className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 transition disabled:opacity-50 active:scale-95"
           >
             Xác Nhận & Tiếp Tục: Quét Liveness Oval
             <ArrowRight className="w-4 h-4" />
@@ -391,4 +486,3 @@ export default function OcrResultReview({
     </div>
   );
 }
-

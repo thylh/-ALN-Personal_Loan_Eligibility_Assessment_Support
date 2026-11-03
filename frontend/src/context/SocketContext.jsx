@@ -14,10 +14,8 @@ export const SocketProvider = ({ children }) => {
 
   useEffect(() => {
     // Connect to backend Socket.IO
-    // In dev, Vite proxies /api, and socket connects to root host or localhost:5000
-    const socketUrl = window.location.hostname === 'localhost' 
-      ? 'http://localhost:5000' 
-      : window.location.origin;
+    // Support connecting via hostname (Local LAN IP or localhost) to port 5000
+    const socketUrl = `http://${window.location.hostname}:5000`;
 
     const newSocket = io(socketUrl, {
       auth: { token: token || localStorage.getItem('token') },
@@ -122,6 +120,12 @@ export const SocketProvider = ({ children }) => {
     });
   };
 
+  const joinPaymentSession = (sessionId) => {
+    if (socket && sessionId) {
+      socket.emit('payment:join_session', { sessionId });
+    }
+  };
+
   return (
     <SocketContext.Provider
       value={{
@@ -132,6 +136,7 @@ export const SocketProvider = ({ children }) => {
         activeLoanEvent,
         joinLoanRoom,
         leaveLoanRoom,
+        joinPaymentSession,
         syncFormField,
         saveDraftRealtime,
         sendCommentRealtime,

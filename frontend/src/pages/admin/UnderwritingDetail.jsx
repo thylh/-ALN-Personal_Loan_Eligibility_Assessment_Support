@@ -1037,10 +1037,11 @@ const UnderwritingDetail = () => {
 
         {/* Action Buttons or Admin / Settled Read-Only Status */}
         <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          {appData.status === 'COMPLETED' || appData.status === 'SETTLED' ? (
+          {appData.status === 'COMPLETED' || appData.status === 'SETTLED' || appData.status === 'APPROVED' || (appData.status === 'DISBURSED' && Number(appData.remainingPrincipal) === 0) ? (
             <div className="flex items-center gap-2">
               <span className="px-4 py-2 rounded-xl text-xs font-bold border bg-emerald-500/20 text-emerald-300 border-emerald-500/40 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Khoản vay đã tất toán toàn bộ - Không thể thao tác lại
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                {appData.status === 'APPROVED' ? 'Khoản vay đã được Phê duyệt - Chế độ chỉ đọc (Read-only)' : 'Khoản vay đã tất toán - Chế độ chỉ đọc (Read-only)'}
               </span>
               <button
                 type="button"

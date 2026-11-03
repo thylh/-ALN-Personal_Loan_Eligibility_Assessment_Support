@@ -3,15 +3,18 @@ import { useCamera } from '../../hooks/useCamera';
 import { useFaceApi } from '../../hooks/useFaceApi';
 import { 
   Smile, CheckCircle2, AlertCircle, ArrowLeft,
-  Sparkles, Camera, ShieldCheck, RefreshCw, Eye, Check
+  Sparkles, Camera, ShieldCheck, RefreshCw, Eye, Check, Clock
 } from 'lucide-react';
 
 const LIVENESS_STEPS = [
-  { id: 'look_straight', label: '1. Nhìn thẳng vào camera', instruction: 'Vui lòng căn chỉnh khuôn mặt vừa vặn vào khung Oval' },
-  { id: 'turn_left', label: '2. Quay mặt nhẹ sang trái', instruction: 'Nghiêng đầu nhẹ nhàng sang bên trái của bạn' },
-  { id: 'turn_right', label: '3. Quay mặt nhẹ sang phải', instruction: 'Nghiêng đầu nhẹ nhàng sang bên phải của bạn' },
-  { id: 'smile', label: '4. Mỉm cười nhẹ', instruction: 'Giữ nụ cười tươi nhẹ để hoàn tất xác thực cử động' }
+  { id: 'look_straight', label: '1. Nhìn thẳng vào camera', instruction: 'Giữ khuôn mặt nhìn thẳng vào giữa khung Oval' },
+  { id: 'turn_left', label: '2. Quay mặt nhẹ sang trái', instruction: 'Nghiêng đầu sang bên trái và giữ nguyên tư thế' },
+  { id: 'turn_right', label: '3. Quay mặt nhẹ sang phải', instruction: 'Nghiêng đầu sang bên phải và giữ nguyên tư thế' },
+  { id: 'smile', label: '4. Mỉm cười nhẹ', instruction: 'Giữ nụ cười tươi nhẹ trong giây lát' }
 ];
+
+// Thời gian bắt buộc giữ tư thế chuẩn (1.5 giây = 1500ms)
+const REQUIRED_HOLD_MS = 1500;
 
 export default function LivenessDetection({
   onComplete,
@@ -23,8 +26,37 @@ export default function LivenessDetection({
   const [statusMessage, setStatusMessage] = useState('Đang khởi động Camera và AI Model...');
   const [isFaceInOval, setIsFaceInOval] = useState(false);
 
+  // A. Tách biệt cập nhật giao diện tiến trình khỏi React State (useRef thay vì useState)
+  // DOM Refs để cập nhật mượt mà 60fps không gây re-render
+  const progressBarRef = useRef(null);
+  const progressContainerRef = useRef(null);
+  const promptTextRef = useRef(null);
+
+  // Lưu trữ step index và completed steps qua Ref để vòng lặp AI không phụ thuộc vào state
+  const currentStepIndexRef = useRef(0);
+  const completedStepsRef = useRef([]);
+  const isPassedRef = useRef(false);
+
+  // Khóa trạng thái chuyển bước (Step Lock) để ngăn bước nhảy vọt
+  const isStepProcessingLock = useRef(false);
+  // Bộ đếm thời gian trễ / giữ tư thế
+  const poseStartTimeRef = useRef(null);
+
   const canvasRef = useRef(null);
   const animationFrameRef = useRef(null);
+
+  // Hàm cập nhật thanh tiến trình và thông báo trực tiếp qua DOM (không re-render)
+  const updateProgressDOM = useCallback((progressPercent, message) => {
+    if (progressBarRef.current) {
+      progressBarRef.current.style.width = `${progressPercent}%`;
+    }
+    if (progressContainerRef.current) {
+      progressContainerRef.current.style.display = progressPercent > 0 ? 'flex' : 'none';
+    }
+    if (promptTextRef.current && message) {
+      promptTextRef.current.innerText = message;
+    }
+  }, []);
 
   const {
     videoRef,
@@ -43,22 +75,113 @@ export default function LivenessDetection({
     analyzeLivenessFrame
   } = useFaceApi();
 
-  // Start front camera & AI models
+  // Khởi tạo camera và model
   useEffect(() => {
-    startCamera('user');
+    let isCancelled = false;
+
+    startCamera('user').then(() => {
+      if (isCancelled) {
+        stopCamera();
+      }
+    });
+
     loadModels();
 
     return () => {
+      isCancelled = true;
       stopCamera();
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [startCamera, stopCamera, loadModels]);
+  }, []);
+
+  /**
+   * Chuyển sang bước cử động tiếp theo sau khi đã giữ đủ thời gian
+   */
+  const handleNextLivenessStep = useCallback((stepId) => {
+    if (isStepProcessingLock.current) return;
+    isStepProcessingLock.current = true;
+
+    const currIdx = currentStepIndexRef.current;
+    if (!completedStepsRef.current.includes(stepId)) {
+      completedStepsRef.current = [...completedStepsRef.current, stepId];
+      setCompletedSteps(completedStepsRef.current);
+    }
+
+    if (currIdx + 1 < LIVENESS_STEPS.length) {
+      const nextIdx = currIdx + 1;
+      currentStepIndexRef.current = nextIdx;
+      setCurrentStepIndex(nextIdx);
+
+      const nextMsg = LIVENESS_STEPS[nextIdx].instruction;
+      setStatusMessage(nextMsg);
+      updateProgressDOM(0, nextMsg);
+      poseStartTimeRef.current = null;
+
+      // Mở khóa chuyển bước sau 450ms trễ
+      setTimeout(() => {
+        isStepProcessingLock.current = false;
+      }, 450);
+    } else {
+      // Hoàn tất tất cả các bước Liveness Oval
+      isPassedRef.current = true;
+      setIsPassed(true);
+      const doneMsg = 'Xác thực cử động thành công! Đang lưu selfie...';
+      setStatusMessage(doneMsg);
+      updateProgressDOM(100, doneMsg);
+
+      setTimeout(() => {
+        const selfieUrl = captureSnapshot({ quality: 0.95 });
+        onComplete({
+          selfieImageUrl: selfieUrl,
+          livenessResult: {
+            passed: true,
+            livenessScore: 98.8,
+            stepsCompleted: completedStepsRef.current,
+            checkedAt: new Date().toISOString()
+          }
+        });
+      }, 500);
+    }
+  }, [captureSnapshot, onComplete, updateProgressDOM]);
+
+  /**
+   * Kiểm tra thời gian giữ tư thế đúng (Pose Hold Duration)
+   * Trả về true nếu đã giữ đủ 1.5s liên tục
+   */
+  const checkPoseDuration = useCallback((isPoseMatching) => {
+    if (!isPoseMatching) {
+      poseStartTimeRef.current = null;
+      updateProgressDOM(0, null);
+      return false;
+    }
+
+    const now = Date.now();
+    if (!poseStartTimeRef.current) {
+      poseStartTimeRef.current = now;
+      updateProgressDOM(10, null);
+      return false;
+    }
+
+    const elapsed = now - poseStartTimeRef.current;
+    const progress = Math.min(100, Math.round((elapsed / REQUIRED_HOLD_MS) * 100));
+    const remainingSec = Math.max(0, ((REQUIRED_HOLD_MS - elapsed) / 1000).toFixed(1));
+    
+    updateProgressDOM(progress, `Tốt! Giữ nguyên tư thế trong ${remainingSec}s...`);
+
+    return elapsed >= REQUIRED_HOLD_MS;
+  }, [updateProgressDOM]);
 
   // Main Realtime Liveness Detection Loop
   const checkLivenessLoop = useCallback(async () => {
-    if (!videoRef.current || !isAiLoaded || isPassed) {
+    if (!videoRef.current || !isAiLoaded || isPassedRef.current) {
+      animationFrameRef.current = requestAnimationFrame(checkLivenessLoop);
+      return;
+    }
+
+    // Nếu đang trong thời gian khóa chuyển bước thì bỏ qua phân tích frame này
+    if (isStepProcessingLock.current) {
       animationFrameRef.current = requestAnimationFrame(checkLivenessLoop);
       return;
     }
@@ -68,88 +191,73 @@ export default function LivenessDetection({
       const result = await analyzeLivenessFrame(video);
 
       if (result && result.detected) {
-        setIsFaceInOval(true);
+        setIsFaceInOval(prev => prev ? prev : true);
 
-        const currentStep = LIVENESS_STEPS[currentStepIndex];
+        const currIdx = currentStepIndexRef.current;
+        const currentStep = LIVENESS_STEPS[currIdx];
+        let poseMatches = false;
 
-        // Evaluate current movement requirement
-        let stepAchieved = false;
-
+        // C. Đánh giá tư thế theo từng bước cụ thể với ngưỡng tối ưu
         if (currentStep.id === 'look_straight') {
+          // Ngưỡng nhìn thẳng đã được nới lỏng nhẹ (|yawRatio| <= 0.07) trong useFaceApi
           if (result.headPose === 'straight') {
-            stepAchieved = true;
+            poseMatches = true;
           } else {
-            setStatusMessage('Vui lòng nhìn thẳng vào giữa camera');
+            if (promptTextRef.current) promptTextRef.current.innerText = 'Vui lòng nhìn thẳng vào giữa camera';
           }
         } else if (currentStep.id === 'turn_left') {
-          // From user mirror perspective
+          // Camera là gương lật (-scale-x-100)
           if (result.headPose === 'left' || result.headPose === 'right') {
-            stepAchieved = true;
+            poseMatches = true;
           } else {
-            setStatusMessage('Quay mặt nhẹ sang bên trái');
+            if (promptTextRef.current) promptTextRef.current.innerText = 'Quay mặt sang bên trái';
           }
         } else if (currentStep.id === 'turn_right') {
           if (result.headPose === 'right' || result.headPose === 'left') {
-            stepAchieved = true;
+            poseMatches = true;
           } else {
-            setStatusMessage('Quay mặt nhẹ sang bên phải');
+            if (promptTextRef.current) promptTextRef.current.innerText = 'Quay mặt sang bên phải';
           }
         } else if (currentStep.id === 'smile') {
-          if (result.isSmiling || result.headPose === 'straight') {
-            stepAchieved = true;
+          if (result.isSmiling) {
+            poseMatches = true;
           } else {
-            setStatusMessage('Mỉm cười nhẹ để hệ thống nhận diện');
+            if (promptTextRef.current) promptTextRef.current.innerText = 'Mỉm cười nhẹ để hệ thống nhận diện';
           }
         }
 
-        if (stepAchieved) {
-          if (!completedSteps.includes(currentStep.id)) {
-            const nextCompleted = [...completedSteps, currentStep.id];
-            setCompletedSteps(nextCompleted);
+        const isDurationMet = checkPoseDuration(poseMatches);
 
-            if (currentStepIndex + 1 < LIVENESS_STEPS.length) {
-              setCurrentStepIndex(prev => prev + 1);
-              setStatusMessage(LIVENESS_STEPS[currentStepIndex + 1].instruction);
-            } else {
-              // ALL STEPS COMPLETED!
-              setIsPassed(true);
-              setStatusMessage('Xác thực cử động sống thành công! Đang chụp ảnh...');
-              
-              // Capture selfie snapshot
-              setTimeout(() => {
-                const selfieUrl = captureSnapshot({ quality: 0.95 });
-                onComplete({
-                  selfieImageUrl: selfieUrl,
-                  livenessResult: {
-                    passed: true,
-                    livenessScore: 98.5,
-                    stepsCompleted: nextCompleted,
-                    checkedAt: new Date().toISOString()
-                  }
-                });
-              }, 400);
-            }
-          }
+        if (isDurationMet) {
+          handleNextLivenessStep(currentStep.id);
         }
       } else {
-        setIsFaceInOval(false);
-        setStatusMessage('Vui lòng đưa khuôn mặt vào giữa khung Oval');
+        setIsFaceInOval(prev => prev ? false : prev);
+        checkPoseDuration(false);
+        if (promptTextRef.current) promptTextRef.current.innerText = 'Vui lòng đưa khuôn mặt vào giữa khung Oval';
       }
     }
 
-    if (!isPassed) {
+    if (!isPassedRef.current) {
       animationFrameRef.current = requestAnimationFrame(checkLivenessLoop);
     }
-  }, [isAiLoaded, isPassed, analyzeLivenessFrame, currentStepIndex, completedSteps, captureSnapshot, onComplete]);
+  }, [
+    isAiLoaded, 
+    analyzeLivenessFrame, 
+    checkPoseDuration, 
+    handleNextLivenessStep
+  ]);
 
+  // B. Kiểm tra lại mảng phụ thuộc của vòng lặp AI (useEffect Dependency Loop)
+  // Chỉ phụ thuộc vào trạng thái camera và AI model được load, hoàn toàn không phụ thuộc state đếm/index
   useEffect(() => {
-    if (isCameraActive && isAiLoaded && !isPassed) {
+    if (isCameraActive && isAiLoaded) {
       animationFrameRef.current = requestAnimationFrame(checkLivenessLoop);
     }
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
-  }, [isCameraActive, isAiLoaded, checkLivenessLoop, isPassed]);
+  }, [isCameraActive, isAiLoaded, checkLivenessLoop]);
 
   // Fallback simulator for development/devices without camera
   const handleSimulatePass = () => {
@@ -291,8 +399,26 @@ export default function LivenessDetection({
           <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-between p-6 z-10">
             
             {/* Top Prompt Banner */}
-            <div className="bg-black/70 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/20 text-xs font-bold text-white text-center shadow-lg animate-bounce">
-              {statusMessage}
+            <div className="flex flex-col items-center gap-1.5 w-full max-w-[280px]">
+              <div 
+                ref={promptTextRef}
+                className="bg-black/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/20 text-xs font-bold text-white text-center shadow-lg w-full"
+              >
+                {statusMessage}
+              </div>
+
+              {/* Progress bar giữ tư thế cập nhật trực tiếp qua DOM Ref không qua useState */}
+              <div 
+                ref={progressContainerRef}
+                style={{ display: 'none' }}
+                className="w-full bg-slate-800/80 rounded-full h-2 p-0.5 border border-white/20 overflow-hidden shadow-inner items-center"
+              >
+                <div
+                  ref={progressBarRef}
+                  className="bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-400 h-full rounded-full transition-[width] duration-75 ease-out"
+                  style={{ width: '0%' }}
+                />
+              </div>
             </div>
 
             {/* Oval Boundary Frame */}

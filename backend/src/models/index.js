@@ -8,6 +8,7 @@ const Comment = require('./Comment');
 const ScoringRule = require('./ScoringRule');
 const PaymentTransaction = require('./PaymentTransaction');
 const EkycRecord = require('./EkycRecord');
+const ArchivedLoan = require('./ArchivedLoan');
 
 module.exports = {
   User,
@@ -19,5 +20,6 @@ module.exports = {
   Comment,
   ScoringRule,
   PaymentTransaction,
-  EkycRecord
+  EkycRecord,
+  ArchivedLoan
 };

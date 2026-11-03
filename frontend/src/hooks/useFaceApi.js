@@ -117,6 +117,53 @@ export function useFaceApi() {
   }, []);
 
   /**
+   * Tính toán góc quay đầu (Head Pose) và biểu cảm từ Face Landmarks
+   * @param {Object} landmarks - Face landmarks từ face-api.js
+   * @param {Object} expressions - Face expressions từ face-api.js
+   */
+  const calculateHeadPose = useCallback((landmarks, expressions) => {
+    if (!landmarks) return { headPose: 'unknown', isSmiling: false, yawRatio: 0 };
+
+    const nose = landmarks.getNose();
+    const leftEye = landmarks.getLeftEye();
+    const rightEye = landmarks.getRightEye();
+    const jawOutline = landmarks.getJawOutline();
+
+    // Tính tâm mắt trung bình
+    const eyeCenter = (leftEye[0].x + rightEye[3].x) / 2;
+    const noseTip = nose[3].x;
+    const faceWidth = Math.max(1, jawOutline[16].x - jawOutline[0].x);
+
+    // Tỉ lệ độ lệch giữa đỉnh mũi và tâm mắt trên bề ngang khuôn mặt
+    const yawRatio = (noseTip - eyeCenter) / faceWidth;
+
+    // C. Tối ưu hóa lại ngưỡng nhận diện:
+    // - Nới lỏng nhẹ ngưỡng cho bước nhìn thẳng đầu tiên (|yawRatio| <= 0.07) để dễ dàng bắt khung hình chính diện
+    // - Quay mặt rõ ràng sang phải: yawRatio < -0.09
+    // - Quay mặt rõ ràng sang trái: yawRatio > 0.09
+    // - Nhìn thẳng: nằm trong khoảng [-0.07, 0.07]
+    let headPose = 'straight';
+    if (yawRatio < -0.09) {
+      headPose = 'right';
+    } else if (yawRatio > 0.09) {
+      headPose = 'left';
+    } else if (Math.abs(yawRatio) <= 0.07) {
+      headPose = 'straight';
+    } else {
+      // Khoảng chuyển tiếp giữa thẳng và nghiêng
+      headPose = yawRatio > 0 ? 'slight_left' : 'slight_right';
+    }
+
+    const isSmiling = expressions && expressions.happy > 0.65;
+
+    return {
+      headPose,
+      isSmiling,
+      yawRatio: Math.round(yawRatio * 1000) / 1000
+    };
+  }, []);
+
+  /**
    * Phân tích cử động đầu và biểu cảm từ video stream để kiểm tra Liveness
    */
   const analyzeLivenessFrame = useCallback(async (videoElement) => {
@@ -136,43 +183,24 @@ export function useFaceApi() {
         };
       }
 
-      const landmarks = detection.landmarks;
-      const nose = landmarks.getNose();
-      const leftEye = landmarks.getLeftEye();
-      const rightEye = landmarks.getRightEye();
-      const jawOutline = landmarks.getJawOutline();
-      const expressions = detection.expressions;
-
-      // Tính vị trí trung tâm mắt và mũi để ước tính góc quay đầu (Yaw)
-      const eyeCenter = (leftEye[0].x + rightEye[3].x) / 2;
-      const noseTip = nose[3].x;
-      const faceWidth = jawOutline[16].x - jawOutline[0].x;
-
-      const yawRatio = (noseTip - eyeCenter) / faceWidth;
-
-      // Yaw threshold:
-      // -0.05 to +0.05: looking straight
-      // < -0.07: turning right (from user perspective)
-      // > +0.07: turning left (from user perspective)
-      let headPose = 'straight';
-      if (yawRatio < -0.08) headPose = 'right';
-      else if (yawRatio > 0.08) headPose = 'left';
-
-      // Smile detection
-      const isSmiling = expressions.happy > 0.65;
+      const { headPose, isSmiling, yawRatio } = calculateHeadPose(
+        detection.landmarks,
+        detection.expressions
+      );
 
       return {
         detected: true,
         detection,
         headPose,
         isSmiling,
+        yawRatio,
         box: detection.detection.box,
         confidence: Math.round(detection.detection.score * 100)
       };
     } catch (e) {
       return null;
     }
-  }, [isLoaded]);
+  }, [isLoaded, calculateHeadPose]);
 
   return {
     isLoaded,
@@ -181,6 +209,7 @@ export function useFaceApi() {
     loadModels,
     extractFaceDescriptor,
     compareFaces,
+    calculateHeadPose,
     analyzeLivenessFrame
   };
 }

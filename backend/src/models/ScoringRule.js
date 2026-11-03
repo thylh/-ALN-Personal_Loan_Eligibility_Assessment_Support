@@ -35,6 +35,10 @@ const scoringRuleSchema = new mongoose.Schema({
   dtiSafetyRatio: {
     type: Number,
     default: 0.5
+  },
+  decisionFlow: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
   }
 }, {
   timestamps: true,

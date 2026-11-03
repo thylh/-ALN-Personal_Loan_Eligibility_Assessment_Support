@@ -15,6 +15,8 @@ const authRoutes = require('./routes/authRoutes');
 const loanRoutes = require('./routes/loanRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const ekycRoutes = require('./routes/ekycRoutes');
+const disbursementRoutes = require('./routes/disbursementRoutes');
+const mobilePaymentRoutes = require('./routes/mobilePaymentRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -60,6 +62,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/loans', loanRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ekyc', ekycRoutes);
+app.use('/api/disbursement', disbursementRoutes);
+app.use('/api/payment', mobilePaymentRoutes);
 
 // Healthcheck Route
 app.get('/api/health', (req, res) => {

@@ -7,11 +7,23 @@ const {
   broadcastDocumentSync
 } = require('../realtime/socketManager');
 
-// UC4.1 - Tra cứu & Quản lý danh sách hồ sơ vay
+// UC4.1 - Tra cứu & Quản lý danh sách hồ sơ vay (LOS Queue Guard & Pagination 10 items/page, max 10 pages)
 const getAllApplications = async (req, res) => {
   try {
-    const { riskGrade, status, search } = req.query;
+    const { riskGrade, status, search, excludeSettled, page, limit } = req.query;
+    
+    // Tự động kiểm tra dọn dẹp hàng đợi theo chính sách Sliding Window 100 khoản vay (10 trang)
+    memoryStore.archiveOldLoanRecords(100);
+
     let apps = memoryStore.getAllApplications();
+
+    // Guard chặn các hồ sơ đã hoàn tất thanh toán / tất toán không lọt vào hàng đợi thẩm định LOS
+    // Trừ khi người dùng chủ động chọn lọc xem tất cả
+    const isLosQueueView = !status || status === 'ALL' || status === 'PENDING' || status === 'SUBMITTED' || status === 'UNDER_REVIEW';
+    if (excludeSettled === 'true' || isLosQueueView) {
+      // Loại bỏ các hồ sơ đã SETTLED, COMPLETED hoặc đã PAID hết dư nợ khỏi hàng đợi thẩm định
+      apps = apps.filter(a => !['SETTLED', 'COMPLETED'].includes(a.status) && !(a.status === 'PAID' && Number(a.remainingPrincipal) === 0));
+    }
 
     if (riskGrade && riskGrade !== 'ALL') {
       apps = apps.filter(a => a.scoringResult && a.scoringResult.riskGrade === riskGrade);
@@ -30,9 +42,33 @@ const getAllApplications = async (req, res) => {
       );
     }
 
+    // Áp dụng giới hạn Data Retention: Tối đa 100 bản ghi (10 trang x 10 bản ghi)
+    const MAX_QUEUE_LIMIT = 100;
+    const boundedApps = apps.slice(0, MAX_QUEUE_LIMIT);
+
+    // Hỗ trợ phân trang cố định: pageSize = 10 (mặc định)
+    const currentPage = Math.max(1, parseInt(page, 10) || 1);
+    const pageSize = Math.min(10, Math.max(1, parseInt(limit, 10) || 10));
+    const totalRecords = boundedApps.length;
+    const totalPages = Math.min(10, Math.ceil(totalRecords / pageSize) || 1);
+
+    // Phân trang
+    const startIndex = (currentPage - 1) * pageSize;
+    const paginatedApps = boundedApps.slice(startIndex, startIndex + pageSize);
+
     return res.json({
       success: true,
-      data: apps
+      data: paginatedApps,
+      pagination: {
+        page: currentPage,
+        limit: pageSize,
+        totalRecords,
+        totalPages,
+        maxPages: 10,
+        maxRetainedRecords: MAX_QUEUE_LIMIT
+      },
+      // Giữ allApps cho client nếu cần tương thích ngược
+      allRecordsCount: apps.length
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -171,7 +207,7 @@ const getScoringRules = async (req, res) => {
 // UC4.3 - Cấu hình trọng số quy tắc chấm điểm (Admin UI)
 const updateScoringRules = async (req, res) => {
   try {
-    const { weights, thresholds, interestRates, dtiSafetyRatio } = req.body;
+    const { weights, thresholds, interestRates, dtiSafetyRatio, decisionFlow } = req.body;
 
     if (weights) {
       const sum = Number(weights.income || 0) + Number(weights.dti || 0) + Number(weights.workTenure || 0) + Number(weights.creditHistory || 0) + Number(weights.age || 0);
@@ -184,7 +220,8 @@ const updateScoringRules = async (req, res) => {
       weights,
       thresholds,
       interestRates,
-      dtiSafetyRatio
+      dtiSafetyRatio,
+      decisionFlow
     });
 
     return res.json({

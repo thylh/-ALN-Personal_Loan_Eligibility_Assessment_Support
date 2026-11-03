@@ -29,17 +29,26 @@ export default function CccdCameraCapture({
     captureSnapshot
   } = useCamera('environment'); // Prioritize back camera for document capture
 
-  // Auto-start camera when method is 'camera'
+  // B. Khởi tạo và ràng buộc vòng đời (useEffect)
+  // Chỉ chạy đúng 1 lần khi component mount (dependency array []), tự động dọn dẹp khi unmount
   useEffect(() => {
+    let isCancelled = false;
+
     if (captureMethod === 'camera') {
-      startCamera();
+      startCamera('environment').then(() => {
+        if (isCancelled) {
+          stopCamera();
+        }
+      });
     } else {
       stopCamera();
     }
+
     return () => {
+      isCancelled = true;
       stopCamera();
     };
-  }, [captureMethod, startCamera, stopCamera]);
+  }, [captureMethod]); // Chỉ kích hoạt lại khi chuyển tab Camera <-> Tải ảnh, không phụ thuộc startCamera/stopCamera
 
   // Handle capture snapshot
   const handleSnap = () => {

@@ -118,6 +118,11 @@ const LosList = () => {
   const [officerFilter, setOfficerFilter] = useState('ALL'); // 'ALL' or 'MINE'
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Pagination & Max 10 Pages Policy (Sliding Window)
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
+  const MAX_ALLOWED_PAGES = 10; // Cố định tối đa 10 trang (tối đa 100 khoản vay gần nhất)
+
   // Customer Profile 360 State (Xem trực tiếp khi bấm vào tên KH)
   const [selectedCustomerFor360, setSelectedCustomerFor360] = useState(null);
   const [showCustomer360Modal, setShowCustomer360Modal] = useState(false);
@@ -235,6 +240,71 @@ const LosList = () => {
     return true;
   });
 
+  // Hàm giới hạn vùng dữ liệu hiển thị (enforceMaxPagesLimit):
+  // Giới hạn tối đa 10 trang (tương đương tối đa 100 khoản vay gần nhất). Cắt bỏ các bản ghi cũ vượt quá giới hạn.
+  const enforceMaxPagesLimit = (records, maxPages = MAX_ALLOWED_PAGES, pageSize = PAGE_SIZE) => {
+    const maxRetained = maxPages * pageSize; // 100 bản ghi
+    if (records.length > maxRetained) {
+      return records.slice(0, maxRetained);
+    }
+    return records;
+  };
+
+  const boundedApps = enforceMaxPagesLimit(filteredApps, MAX_ALLOWED_PAGES, PAGE_SIZE);
+  const totalPages = Math.min(MAX_ALLOWED_PAGES, Math.ceil(boundedApps.length / PAGE_SIZE) || 1);
+
+  // Hàm phân trang dữ liệu (paginateLoanRecords):
+  // Cắt mảng dữ liệu sao cho mỗi trang chứa tối đa đúng 10 khoản vay
+  const paginateLoanRecords = (records, page, pageSize = PAGE_SIZE) => {
+    const safePage = Math.min(Math.max(1, page), totalPages);
+    const start = (safePage - 1) * pageSize;
+    return records.slice(start, start + pageSize);
+  };
+
+  const paginatedApps = paginateLoanRecords(boundedApps, currentPage, PAGE_SIZE);
+
+  // Reset về trang 1 khi người dùng đổi bộ lọc tìm kiếm
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, gradeFilter, officerFilter, searchQuery]);
+
+  // Hàm điều kiện hiển thị nút thao tác (renderActionCell):
+  // - Nếu trạng thái Đang chờ thẩm định (PENDING/SUBMITTED/UNDER_REVIEW/ACTION_REQUIRED): Hiển thị nút [Thẩm định]
+  // - Nếu trạng thái Đã phê duyệt (APPROVED) hoặc Đã tất toán (SETTLED/PAID): Chuyển thành [Xem trạng thái] (Read-only)
+  const renderActionCell = (item) => {
+    const isApprovedOrSettled = 
+      item.status === 'APPROVED' || 
+      item.status === 'SETTLED' || 
+      item.status === 'COMPLETED' || 
+      item.status === 'PAID' ||
+      item.status === 'DISBURSED';
+
+    if (isApprovedOrSettled) {
+      return (
+        <Link
+          to={`/admin/los/${item.id}`}
+          className="py-1.5 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 border border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 transition shadow-sm"
+          title="Khoản vay đã hoàn tất/phê duyệt - Xem chi tiết ở chế độ chỉ đọc"
+        >
+          <Eye className="w-3.5 h-3.5 text-blue-600" />
+          <span>Xem trạng thái</span>
+        </Link>
+      );
+    }
+
+    // Các trạng thái đang chờ thẩm định
+    return (
+      <Link
+        to={`/admin/los/${item.id}`}
+        className="btn-primary py-1.5 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition"
+        title="Thao tác nghiệp vụ thẩm định hồ sơ"
+      >
+        <span>Thẩm định</span>
+        <ArrowUpRight className="w-3.5 h-3.5" />
+      </Link>
+    );
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 max-w-7xl mx-auto py-2">
       
@@ -334,18 +404,18 @@ const LosList = () => {
         {/* Quick summary counts */}
         <div className="flex flex-wrap items-center justify-between text-xs pt-1 border-t border-slate-100">
           <span className="text-slate-500">
-            Hiển thị <strong>{filteredApps.length}</strong> / {applications.length} hồ sơ
+            Hiển thị <strong>{paginatedApps.length}</strong> / {boundedApps.length} hồ sơ (Tối đa 10 trang / 100 khoản vay)
           </span>
 
           <div className="flex items-center gap-3 text-[11px] font-semibold">
             <span className="flex items-center gap-1 text-amber-600">
-              <span className="w-2 h-2 rounded-full bg-amber-500"></span> Chờ duyệt: 2
+              <span className="w-2 h-2 rounded-full bg-amber-500"></span> Chờ duyệt: {boundedApps.filter(a => a.status === 'PENDING' || a.status === 'SUBMITTED').length}
             </span>
             <span className="flex items-center gap-1 text-blue-600">
-              <span className="w-2 h-2 rounded-full bg-blue-500"></span> Đang xử lý: 1
+              <span className="w-2 h-2 rounded-full bg-blue-500"></span> Đang thẩm định: {boundedApps.filter(a => a.status === 'IN_REVIEW' || a.status === 'UNDER_REVIEW').length}
             </span>
             <span className="flex items-center gap-1 text-emerald-600">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Đã duyệt: 1
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Đã duyệt: {boundedApps.filter(a => a.status === 'APPROVED').length}
             </span>
           </div>
         </div>
@@ -368,7 +438,7 @@ const LosList = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredApps.map((item) => (
+              {paginatedApps.map((item) => (
                 <tr key={item.id} className="hover:bg-blue-50/50 transition">
                   {/* LOS ID */}
                   <td className="py-3.5 px-4 font-mono font-bold text-blue-700">
@@ -472,15 +542,9 @@ const LosList = () => {
                     )}
                   </td>
 
-                  {/* Action */}
+                  {/* Action - Sử dụng hàm renderActionCell kiểm tra điều kiện trạng thái */}
                   <td className="py-3.5 px-4 text-right">
-                    <Link
-                      to={`/admin/los/${item.id}`}
-                      className={`${(item.status === 'COMPLETED' || item.status === 'SETTLED') ? 'bg-slate-100 text-slate-700 hover:bg-slate-200' : 'btn-primary'} py-1.5 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1 shadow-sm transition`}
-                    >
-                      {(item.status === 'COMPLETED' || item.status === 'SETTLED') ? 'Xem hồ sơ' : 'Thẩm định'}
-                      <ArrowUpRight className="w-3.5 h-3.5" />
-                    </Link>
+                    {renderActionCell(item)}
                   </td>
                 </tr>
               ))}
@@ -488,14 +552,61 @@ const LosList = () => {
           </table>
         </div>
 
-        {/* Pagination bar */}
+        {/* Pagination bar - Cố định 10 bản ghi/trang, tối đa 10 trang */}
         <div className="p-4 px-6 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <span>Trang 1 / 1</span>
-          <div className="flex gap-1">
-            <button type="button" disabled className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-300 cursor-not-allowed">
+          <div className="flex items-center gap-2">
+            <span>
+              Trang <strong>{currentPage}</strong> / {totalPages} (Tối đa {MAX_ALLOWED_PAGES} trang)
+            </span>
+            <span className="text-[10px] text-slate-400">
+              • {PAGE_SIZE} bản ghi/trang
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              className={`p-1.5 px-3 rounded-lg border flex items-center gap-1 text-xs font-bold transition ${
+                currentPage <= 1
+                  ? 'border-slate-200 bg-white text-slate-300 cursor-not-allowed'
+                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100 shadow-sm'
+              }`}
+            >
               <ChevronLeft className="w-4 h-4" />
+              <span>Trước</span>
             </button>
-            <button type="button" disabled className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-300 cursor-not-allowed">
+
+            {/* Danh sách các số trang (tối đa 10 trang) */}
+            <div className="hidden sm:flex items-center gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                <button
+                  key={pageNum}
+                  type="button"
+                  onClick={() => setCurrentPage(pageNum)}
+                  className={`w-7 h-7 rounded-lg text-xs font-bold transition ${
+                    currentPage === pageNum
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              className={`p-1.5 px-3 rounded-lg border flex items-center gap-1 text-xs font-bold transition ${
+                currentPage >= totalPages
+                  ? 'border-slate-200 bg-white text-slate-300 cursor-not-allowed'
+                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100 shadow-sm'
+              }`}
+            >
+              <span>Sau</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>

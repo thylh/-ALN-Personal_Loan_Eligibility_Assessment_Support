@@ -1,11 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
+import { usePaymentWebSocket } from '../../hooks/usePaymentWebSocket';
+import { NGROK_DOMAIN } from '../../config/paymentConfig';
 import { api } from '../../services/api';
 import { 
   CreditCard, QrCode, Copy, CheckCircle2, 
   ArrowRight, ShieldCheck, Landmark, Check, 
-  DollarSign, RefreshCw, AlertCircle, Sparkles, Download, Clock
+  DollarSign, RefreshCw, AlertCircle, Sparkles, Download, Clock,
+  Smartphone, ExternalLink
 } from 'lucide-react';
 
 const PaymentDisbursement = () => {
@@ -105,6 +110,58 @@ const PaymentDisbursement = () => {
 
   const currentPayAmount = payOption === 'monthly' ? vaData.monthlyAmount : payOption === 'full' ? vaData.fullAmount : customAmount;
 
+  // Hợp đồng thanh toán mục tiêu
+  const effectiveContractId = activeLoan?.applicationNo || 'LOAN-2026-7679';
+
+  // Số tiền của kỳ hạn hiện tại (currentInstallmentAmount)
+  const currentInstallmentAmount = vaData.monthlyAmount > 0 ? vaData.monthlyAmount : 4513940;
+
+  // 1. Hàm sinh mã QR (generateMobilePayQR / qrValue):
+  // Truyền chính xác số tiền thanh toán (ưu tiên số tiền kỳ hạn hiện tại hoặc tùy chọn của user)
+  const generateQRValue = (contractId, amount) => {
+    // Đảm bảo số tiền gửi đi là số tiền đợt hiện tại, không lấy nhầm tổng dư nợ toàn bộ hợp đồng
+    const finalAmount = amount > 0 ? amount : currentInstallmentAmount;
+    return `${NGROK_DOMAIN}/mobile-pay?contractId=${encodeURIComponent(contractId)}&amount=${finalAmount}`;
+  };
+
+  const qrValue = generateQRValue(effectiveContractId, currentPayAmount);
+
+  // Hàm làm sạch bộ nhớ tạm (resetPaymentState) để xóa bỏ dữ liệu khoản vay cũ khỏi state cục bộ
+  const resetPaymentState = useCallback(() => {
+    setCustomAmount(0);
+    setErrorMsg('');
+    setCopiedField(null);
+  }, []);
+
+  // 2. Hàm làm mới dữ liệu (fetchPaymentData / refetch) được gọi ngay lập tức khi nhận WebSocket thành công
+  const fetchPaymentData = useCallback(async () => {
+    await fetchOverview();
+    resetPaymentState();
+  }, [fetchOverview, resetPaymentState]);
+
+  // 3. Lắng nghe Real-time bằng Hook usePaymentWebSocket theo contractId
+  const onPaymentSuccess = useCallback(async (eventData) => {
+    console.log('[PaymentDisbursement] Nhận tín hiệu thanh toán thành công Real-Time:', eventData);
+    setPaymentSuccess(true);
+    setLastTxn(eventData.transaction || {
+      transactionNo: `TXN-NGROK-${Date.now().toString().slice(-6)}`,
+      amount: eventData.amount || currentPayAmount
+    });
+    // Gọi hàm làm mới dữ liệu và xóa sạch bộ nhớ tạm ngay lập tức
+    await fetchPaymentData();
+  }, [currentPayAmount, fetchPaymentData]);
+
+  const onPaymentCancelled = useCallback((eventData) => {
+    console.log('[PaymentDisbursement] Giao dịch bị hủy từ di động:', eventData);
+    setErrorMsg('Giao dịch trên di động đã bị hủy bởi người dùng.');
+    setTimeout(() => setErrorMsg(''), 4000);
+  }, []);
+
+  usePaymentWebSocket(effectiveContractId, {
+    onPaymentSuccess,
+    onPaymentCancelled
+  });
+
   // Real-time payment execution connected to backend & MongoDB
   const handleProcessPayment = async () => {
     if (!activeLoan) {
@@ -130,8 +187,8 @@ const PaymentDisbursement = () => {
       if (res && res.success) {
         setPaymentSuccess(true);
         setLastTxn(res.data.transaction);
-        // Refresh overview immediately from DB to update remaining balance and stats in real-time
-        await fetchOverview();
+        // Làm mới dữ liệu và dọn cache state
+        await fetchPaymentData();
       } else {
         setErrorMsg(res?.message || 'Giao dịch thanh toán thất bại.');
       }
@@ -274,20 +331,22 @@ const PaymentDisbursement = () => {
               <div className="lg:col-span-5 bg-white rounded-3xl border border-slate-200 shadow-xl p-6 text-center space-y-4">
                 <div className="flex justify-between items-center pb-2 border-b border-slate-100 text-xs">
                   <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                    <QrCode className="w-4 h-4 text-blue-600" /> VietQR Napas 247
+                    <Smartphone className="w-4 h-4 text-blue-600" /> Quét QR Thanh Toán Di Động
                   </span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-[10px]">
-                    Khớp Lệnh Tức Thì
+                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold text-[10px] flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Realtime Sync
                   </span>
                 </div>
 
-                {/* QR Code Container */}
+                {/* QR Code Container (Vẽ trực tiếp bằng QRCodeSVG từ qrcode.react) */}
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex flex-col items-center justify-center space-y-3">
-                  <div className="w-48 h-48 bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex items-center justify-center relative overflow-hidden">
-                    <img 
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=247-MBBANK-${vaData.accountNumber}-${currentPayAmount}-${encodeURIComponent(vaData.transferMemo)}`}
-                      alt="VietQR Transfer"
-                      className="w-full h-full object-contain"
+                  <div className="w-52 h-52 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center relative overflow-hidden">
+                    <QRCodeSVG 
+                      value={qrValue}
+                      size={180}
+                      level="M"
+                      includeMargin={false}
                     />
                   </div>
 
@@ -297,10 +356,26 @@ const PaymentDisbursement = () => {
                   <div className="text-base font-black text-blue-600">
                     {formatCurrency(currentPayAmount)}
                   </div>
+
+                  {/* Nút mở nhanh trang di động để test trực tiếp trên cùng máy hoặc qua ngrok */}
+                  <div className="space-y-1">
+                    <a
+                      href={qrValue}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 font-bold underline"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Mở giao diện điện thoại (Ngrok Web)
+                    </a>
+                    <div className="text-[10px] text-slate-400 font-mono truncate max-w-[240px]">
+                      {qrValue}
+                    </div>
+                  </div>
                 </div>
 
                 <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Mở ứng dụng ngân hàng bất kỳ (Vietcombank, MB, Techcombank, BIDV, MoMo...) quét mã để thanh toán tự động trừ nợ theo thời gian thực.
+                  📱 <strong className="text-slate-700">Dùng camera điện thoại quét mã QR ngrok</strong>: Mở trang xác nhận thanh toán trên di động. Khi bạn bấm <em>[Xác nhận thanh toán]</em> trên điện thoại, màn hình máy tính này sẽ tự động nhảy sang thông báo Thành Công tức thì!
                 </p>
 
                 <button
@@ -310,7 +385,7 @@ const PaymentDisbursement = () => {
                   className="w-full py-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
                 >
                   <Sparkles className="w-4 h-4 text-amber-500" />
-                  {isProcessingPayment ? 'Đang gửi giao dịch đến ngân hàng...' : 'Xác nhận thanh toán ngay (Real-Time)'}
+                  {isProcessingPayment ? 'Đang gửi giao dịch đến ngân hàng...' : 'Xác nhận thanh toán ngay (Mô phỏng tại máy tính)'}
                 </button>
               </div>
 

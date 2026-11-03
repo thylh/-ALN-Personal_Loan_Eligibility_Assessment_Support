@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  UploadCloud, FileText, CheckCircle2, AlertCircle, 
-  Trash2, Eye, ShieldCheck, ArrowRight, ArrowLeft, 
+import {
+  UploadCloud, FileText, CheckCircle2, AlertCircle,
+  Trash2, Eye, ShieldCheck, ArrowRight, ArrowLeft,
   Sparkles, FileCheck, X, ZoomIn, ZoomOut, Check
 } from 'lucide-react';
 
@@ -52,7 +52,7 @@ const DocumentUpload = () => {
             fileUrl: verified.frontImageUrl || null
           }
         ]);
-      } catch (e) {}
+      } catch (e) { }
     }
   }, []);
 
@@ -94,11 +94,11 @@ const DocumentUpload = () => {
             const newDoc = {
               id: 'doc_' + Date.now(),
               category: selectedCategory,
-              title: selectedCategory === 'income_statement' 
-                ? 'Sao kê lương ngân hàng' 
-                : selectedCategory === 'labor_contract' 
-                ? 'Hợp đồng lao động' 
-                : 'Giấy tờ tiện ích bổ sung',
+              title: selectedCategory === 'income_statement'
+                ? 'Sao kê lương ngân hàng'
+                : selectedCategory === 'labor_contract'
+                  ? 'Hợp đồng lao động'
+                  : 'Giấy tờ tiện ích bổ sung',
               required: selectedCategory !== 'utility_bill',
               status: 'completed',
               fileName: file.name,
@@ -141,13 +141,13 @@ const DocumentUpload = () => {
       return;
     }
     // Save document state
-    localStorage.setItem('uploadedLoanDocuments', JSON.stringify(documents));
+    //localStorage.setItem('uploadedLoanDocuments', JSON.stringify(documents));
     navigate('/apply/contract');
   };
 
   return (
     <div className="max-w-4xl mx-auto py-2 sm:py-6 animate-in fade-in duration-500">
-      
+
       {/* Header & Step progress */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
@@ -183,16 +183,16 @@ const DocumentUpload = () => {
 
       {/* Main Content Layout */}
       <div className="grid lg:grid-cols-12 gap-8 items-start">
-        
+
         {/* Left: Upload Dropzone & Category Selector (7 cols) */}
         <div className="lg:col-span-7 space-y-6">
-          
+
           <div className="bg-white rounded-3xl border border-slate-200 shadow-xl p-6 space-y-5">
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">
                 Chọn loại chứng từ cần tải lên
               </label>
-              
+
               <div className="grid sm:grid-cols-3 gap-2">
                 <button
                   type="button"
@@ -229,11 +229,10 @@ const DocumentUpload = () => {
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-3 ${
-                dragOver 
-                  ? 'border-blue-500 bg-blue-50/70 scale-[0.99]' 
+              className={`border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-3 ${dragOver
+                  ? 'border-blue-500 bg-blue-50/70 scale-[0.99]'
                   : 'border-slate-300 hover:border-blue-400 bg-slate-50/50 hover:bg-blue-50/20'
-              }`}
+                }`}
             >
               <input
                 ref={fileInputRef}
@@ -295,7 +294,7 @@ const DocumentUpload = () => {
 
         {/* Right: Uploaded Documents List & Checklist (5 cols) */}
         <div className="lg:col-span-5 space-y-6">
-          
+
           <div className="bg-white rounded-3xl border border-slate-200 shadow-xl p-6 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
@@ -366,7 +365,7 @@ const DocumentUpload = () => {
               <span className="font-bold text-slate-700 block text-[11px] uppercase tracking-wide">
                 Điều kiện nộp hồ sơ xét duyệt:
               </span>
-              
+
               <div className="flex items-center justify-between">
                 <span className="text-slate-600">1. CCCD gắn chip (2 mặt):</span>
                 <span className="font-bold text-emerald-600 flex items-center gap-1">
@@ -393,11 +392,11 @@ const DocumentUpload = () => {
 
             {/* Self-declaration option for users with manual entered financial data */}
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-xs flex items-start gap-2.5">
-              <input 
-                type="checkbox" 
-                id="selfCert" 
-                checked={selfCertified} 
-                onChange={(e) => setSelfCertified(e.target.checked)} 
+              <input
+                type="checkbox"
+                id="selfCert"
+                checked={selfCertified}
+                onChange={(e) => setSelfCertified(e.target.checked)}
                 className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer mt-0.5"
               />
               <label htmlFor="selfCert" className="text-amber-900 font-medium cursor-pointer text-[11px] leading-relaxed">
@@ -411,11 +410,10 @@ const DocumentUpload = () => {
                 type="button"
                 onClick={handleProceedToContract}
                 disabled={!isReadyToSubmit}
-                className={`w-full py-3.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition ${
-                  isReadyToSubmit
+                className={`w-full py-3.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition ${isReadyToSubmit
                     ? 'btn-primary shadow-blue-500/25'
                     : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                }`}
+                  }`}
               >
                 Tiếp tục & Ký hợp đồng điện tử
                 <ArrowRight className="w-4 h-4" />
@@ -440,7 +438,7 @@ const DocumentUpload = () => {
       {previewDoc && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
-            
+
             <div className="p-4 px-6 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div>
                 <h4 className="font-bold text-slate-900 text-sm">{previewDoc.title}</h4>
